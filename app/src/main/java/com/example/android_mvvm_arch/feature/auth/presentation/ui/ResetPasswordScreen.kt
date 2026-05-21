@@ -2,7 +2,6 @@ package com.example.android_mvvm_arch.feature.auth.presentation.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -25,25 +24,22 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.android_mvvm_arch.core.network.MockApiInterceptor
-import com.example.android_mvvm_arch.feature.auth.presentation.state.LoginIntent
-import com.example.android_mvvm_arch.feature.auth.presentation.state.LoginUiEvent
-import com.example.android_mvvm_arch.feature.auth.presentation.viewmodel.LoginViewModel
+import com.example.android_mvvm_arch.feature.auth.presentation.state.ResetPasswordIntent
+import com.example.android_mvvm_arch.feature.auth.presentation.state.ResetPasswordUiEvent
+import com.example.android_mvvm_arch.feature.auth.presentation.viewmodel.ResetPasswordViewModel
 
 @Composable
-fun LoginScreen(
-    onNavigateToProfile: () -> Unit,
-    onNavigateToRegister: () -> Unit,
-    onNavigateToForgotPassword: () -> Unit,
-    viewModel: LoginViewModel = hiltViewModel(),
+fun ResetPasswordScreen(
+    onNavigateToLogin: () -> Unit,
+    viewModel: ResetPasswordViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) {
         viewModel.uiEvent.collect { event ->
             when (event) {
-                LoginUiEvent.NavigateToProfile -> onNavigateToProfile()
-                is LoginUiEvent.ShowMessage -> Unit
+                ResetPasswordUiEvent.NavigateToLogin -> onNavigateToLogin()
+                is ResetPasswordUiEvent.ShowMessage -> Unit
             }
         }
     }
@@ -56,31 +52,36 @@ fun LoginScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
-            text = "登入",
+            text = "重設密碼",
             style = MaterialTheme.typography.headlineMedium,
         )
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = "Demo：${MockApiInterceptor.DEMO_EMAIL} / ${MockApiInterceptor.DEMO_PASSWORD}",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(32.dp))
 
         OutlinedTextField(
-            value = uiState.email,
-            onValueChange = { viewModel.onIntent(LoginIntent.EmailChanged(it)) },
-            label = { Text("Email") },
+            value = uiState.token,
+            onValueChange = { viewModel.onIntent(ResetPasswordIntent.TokenChanged(it)) },
+            label = { Text("重設 Token") },
             singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
             modifier = Modifier.fillMaxWidth(),
             enabled = !uiState.isLoading,
         )
         Spacer(modifier = Modifier.height(12.dp))
         OutlinedTextField(
-            value = uiState.password,
-            onValueChange = { viewModel.onIntent(LoginIntent.PasswordChanged(it)) },
-            label = { Text("Password") },
+            value = uiState.newPassword,
+            onValueChange = { viewModel.onIntent(ResetPasswordIntent.NewPasswordChanged(it)) },
+            label = { Text("新密碼（至少 8 位）") },
+            singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !uiState.isLoading,
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        OutlinedTextField(
+            value = uiState.confirmNewPassword,
+            onValueChange = { viewModel.onIntent(ResetPasswordIntent.ConfirmNewPasswordChanged(it)) },
+            label = { Text("確認新密碼") },
             singleLine = true,
             visualTransformation = PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
@@ -97,22 +98,9 @@ fun LoginScreen(
             )
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End,
-        ) {
-            TextButton(onClick = onNavigateToForgotPassword) {
-                Text(
-                    text = "忘記密碼？",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(24.dp))
         Button(
-            onClick = { viewModel.onIntent(LoginIntent.SubmitLogin) },
+            onClick = { viewModel.onIntent(ResetPasswordIntent.SubmitResetPassword) },
             enabled = !uiState.isLoading,
             modifier = Modifier.fillMaxWidth(),
         ) {
@@ -122,12 +110,12 @@ fun LoginScreen(
                     strokeWidth = 2.dp,
                 )
             } else {
-                Text("登入")
+                Text("確認重設密碼")
             }
         }
         Spacer(modifier = Modifier.height(12.dp))
-        TextButton(onClick = onNavigateToRegister) {
-            Text("立即註冊")
+        TextButton(onClick = onNavigateToLogin) {
+            Text("返回登入")
         }
     }
 }

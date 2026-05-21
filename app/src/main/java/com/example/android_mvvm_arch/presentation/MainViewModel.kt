@@ -2,6 +2,8 @@ package com.example.android_mvvm_arch.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.android_mvvm_arch.core.auth.AuthEvent
+import com.example.android_mvvm_arch.core.auth.AuthEventBus
 import com.example.android_mvvm_arch.feature.auth.domain.usecase.IsLoggedInUseCase
 import com.example.android_mvvm_arch.navigation.Routes
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -14,6 +16,7 @@ import javax.inject.Inject
 @HiltViewModel
 class MainViewModel @Inject constructor(
     private val isLoggedInUseCase: IsLoggedInUseCase,
+    private val authEventBus: AuthEventBus,
 ) : ViewModel() {
 
     private val _startDestination = MutableStateFlow<String?>(null)
@@ -23,6 +26,13 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch {
             val destination = if (isLoggedInUseCase()) Routes.PROFILE else Routes.LOGIN
             _startDestination.value = destination
+        }
+        viewModelScope.launch {
+            authEventBus.events.collect { event ->
+                when (event) {
+                    AuthEvent.ForceLogout -> _startDestination.value = Routes.LOGIN
+                }
+            }
         }
     }
 }

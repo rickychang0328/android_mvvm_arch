@@ -3,6 +3,7 @@ package com.example.android_mvvm_arch.di
 import com.example.android_mvvm_arch.BuildConfig
 import com.example.android_mvvm_arch.core.network.AuthInterceptor
 import com.example.android_mvvm_arch.core.network.MockApiInterceptor
+import com.example.android_mvvm_arch.core.network.TokenRefreshAuthenticator
 import com.example.android_mvvm_arch.feature.auth.data.remote.AuthApi
 import com.example.android_mvvm_arch.feature.profile.data.remote.ProfileApi
 import com.squareup.moshi.Moshi
@@ -33,6 +34,7 @@ object NetworkModule {
     fun provideOkHttpClient(
         mockApiInterceptor: MockApiInterceptor,
         authInterceptor: AuthInterceptor,
+        tokenRefreshAuthenticator: TokenRefreshAuthenticator,
     ): OkHttpClient {
         val logging = HttpLoggingInterceptor().apply {
             level = HttpLoggingInterceptor.Level.BASIC
@@ -42,6 +44,7 @@ object NetworkModule {
             .addInterceptor(mockApiInterceptor)
             .addInterceptor(authInterceptor)
             .addInterceptor(logging)
+            .authenticator(tokenRefreshAuthenticator)
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .build()

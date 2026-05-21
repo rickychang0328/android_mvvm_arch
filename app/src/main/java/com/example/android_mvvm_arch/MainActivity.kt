@@ -11,6 +11,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -44,7 +45,9 @@ class MainActivity : ComponentActivity() {
                                 CircularProgressIndicator()
                             }
 
-                            else -> AppNavGraph(startDestination = destination)
+                            else -> key(destination) {
+                                AppNavGraph(startDestination = destination)
+                            }
                         }
                     }
                 }
