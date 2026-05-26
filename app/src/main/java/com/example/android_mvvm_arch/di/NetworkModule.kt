@@ -42,8 +42,9 @@ object NetworkModule {
             redactHeader("Authorization")
         }
         return OkHttpClient.Builder()
-            .addInterceptor(mockApiInterceptor)
             .addInterceptor(authInterceptor)
+            // 在 mock 回應前先注入 token，避免受保護端點在 mock 環境誤回 401。
+            .addInterceptor(mockApiInterceptor)
             .addInterceptor(logging)
             .authenticator(tokenRefreshAuthenticator)
             .connectTimeout(30, TimeUnit.SECONDS)
