@@ -27,6 +27,7 @@
    - 6.2 [Profile 個人資料功能](#62-profile-個人資料功能)
    - 6.3 [Settings 設定功能](#63-settings-設定功能)
    - 6.4 [Notifications 通知功能](#64-notifications-通知功能)
+- 6.5 [HomeDashboard 主頁功能](#65-homedashboard-主頁功能)
 7. [安全設計（DLP）](#7-安全設計dlp)
 8. [錯誤處理策略](#8-錯誤處理策略)
 9. [導航設計](#9-導航設計)
@@ -761,6 +762,66 @@ class AndroidMvvmArchApplication : Application(), Configuration.Provider {
 - 錯誤：`Snackbar`（含「重試」action label）→ 觸發 `NotificationsIntent.Retry`
 - TopAppBar：標題「通知」、返回鈕、`Icons.Filled.DoneAll` action 觸發 `MarkAllRead`（無未讀時 disabled）
 - ProfileScreen 入口：TopAppBar 鈴鐺 `IconButton` + `BadgedBox`（未讀數量 > 0 時顯示 `Badge`）
+
+---
+
+### 6.5 HomeDashboard 主頁功能
+
+#### 使用者故事
+
+> 登入成功後抵達 Home Dashboard，看到歡迎詞與基本資料摘要，並可透過快速動作前往 Profile / Settings / Notifications 或觸發資料刷新。
+
+#### UI 與互動
+
+- **歡迎卡片**：顯示 `displayName`、`email`，背景採用當前 Theme（深/淺色、語言由 Settings DataStore 決定，Home 自動套用）。
+- **快速動作（Quick Actions）**：2 欄網格，預設三個入口：Profile、Settings、Notifications（路由為 `Routes.PROFILE / SETTINGS / NOTIFICATIONS`），可再擴充其他動作。
+- **通知摘要（可擴充）**：可訂閱 `GetUnreadCountUseCase` 將未讀數顯示為徽章或摘要卡；資料由 Notifications 模組與 `NotificationSyncWorker` 維持最新，並受 `notificationsEnabled`（DataStore）影響。
+- **刷新行為**：`HomeViewModel.onRefresh()` 觸發 Profile 同步並寫入 `HomeUiState.error`；UI 目前尚未掛上下拉元件，可後續整合 `PullToRefreshBox`。
+
+#### 狀態定義（MVI）
+
+```kotlin
+data class HomeUiState(
+    val userProfile: UserProfile? = null,
+    val isLoading: Boolean = false,
+    val error: String? = null,
+    val quickActions: List<QuickAction> = emptyList(),
+)
+
+data class QuickAction(
+    val title: String,
+    val icon: Int? = null,
+    val route: String,
+)
+```
+
+#### 資料流與邊界
+
+```
+HomeViewModel.init
+  ├─► _uiState.isLoading = true
+  ├─► quickActions = [Profile, Settings, Notifications]
+  ├─► collect GetUserProfileUseCase.observeProfile()
+  │       └─► _uiState.userProfile 更新 → HomeContent 歡迎卡渲染
+  └─► launch refresh() 一次性同步遠端（ProfileRepository.refreshProfile）
+
+HomeViewModel.onRefresh()
+  └─► _uiState.isLoading = true
+        └─► getUserProfileUseCase.refresh()
+              └─ failure → _uiState.error
+```
+
+資料來源沿用 Mock API（`MockApiInterceptor`）+ Room 快取，無需真實後端即可展示 Dashboard。
+
+#### 與既有模組整合
+
+| 模組 | 整合點 |
+|------|--------|
+| Auth | `MainViewModel` 依 `IsLoggedInUseCase` 決定啟動路由；Login / Register 成功後以 `NavController` popUpTo root 導向 `Routes.HOME`。 |
+| Profile | `GetUserProfileUseCase.observeProfile()` 提供 `UserProfile` Flow；`refresh()` 觸發 Repository 拉取並寫入 Room，Home 歡迎卡即時更新。 |
+| Settings（DataStore） | Home 不直接寫入 DataStore，但 Theme / 語言 / `notificationsEnabled` 由 `SettingsDataStore` 決定並全域套用；快速動作連至 Settings 供使用者調整偏好。 |
+| Notifications | 快速動作導向 `NotificationsScreen`；未讀資料由 `NotificationsRepository` + `NotificationSyncWorker`（15 分鐘輪詢，受 `notificationsEnabled` 影響）維持最新，Home 可訂閱 `GetUnreadCountUseCase` 作為摘要徽章或卡片。 |
+| Navigation | 新增 `Routes.HOME` 節點於 `AppNavGraph`，與其他頁一致使用 `NavHost` + `hiltViewModel` 注入。 |
 
 ---
 
