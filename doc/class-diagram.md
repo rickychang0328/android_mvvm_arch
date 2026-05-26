@@ -1143,3 +1143,67 @@ classDiagram
     AndroidMvvmArchApplication --> NotificationHelper : createChannel
     AndroidMvvmArchApplication --> NotificationSyncWorker : enqueuePeriodic
 ```
+
+---
+
+## 8. HomeDashboard Paging 功能類別圖
+
+```mermaid
+classDiagram
+    direction LR
+
+    class HomeUiState {
+        +userProfile: UserProfile?
+        +isLoading: Boolean
+        +error: String?
+        +quickActions: List~QuickAction~
+    }
+
+    class QuickAction {
+        +title: String
+        +icon: Int?
+        +route: String
+    }
+
+    class HomeViewModel {
+        -getUserProfileUseCase: GetUserProfileUseCase
+        -getNotificationsPagingUseCase: GetNotificationsPagingUseCase
+        +uiState: StateFlow~HomeUiState~
+        +recentNotificationsPagingDataFlow: Flow~PagingData~Notification~~
+        +onRefresh()
+    }
+
+    class HomeScreen {
+        +onNavigateToRoute(route: String)
+        observes: HomeUiState
+        observes: LazyPagingItems~Notification~
+    }
+
+    class GetUserProfileUseCase {
+        +observeProfile() Flow~UserProfile?~
+        +refresh() Result~UserProfile~
+    }
+
+    class GetNotificationsPagingUseCase {
+        +invoke(pageSize: Int) Flow~PagingData~Notification~~
+    }
+
+    class NotificationsRepository {
+        <<interface>>
+        +getNotificationsPagingData(pageSize: Int) Flow~PagingData~Notification~~
+    }
+
+    class NotificationsPagingSource {
+        +load(params: LoadParams~Int~) LoadResult~Int, Notification~
+        +getRefreshKey(state: PagingState~Int, Notification~) Int?
+    }
+
+    HomeScreen --> HomeViewModel : hiltViewModel()
+    HomeScreen --> HomeUiState : collectAsStateWithLifecycle
+    HomeScreen --> GetNotificationsPagingUseCase : collectAsLazyPagingItems()
+    HomeViewModel --> GetUserProfileUseCase
+    HomeViewModel --> GetNotificationsPagingUseCase
+    HomeViewModel --> HomeUiState
+    GetNotificationsPagingUseCase --> NotificationsRepository
+    NotificationsRepository --> NotificationsPagingSource
+```

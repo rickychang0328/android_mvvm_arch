@@ -966,3 +966,54 @@ sequenceDiagram
     API-->>LP: 最新 is_read 狀態
     LP-->>NS: UI 已讀狀態即時更新
 ```
+
+---
+
+## 23. HomeDashboard 近期通知分頁與刷新
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant HS as HomeScreen
+    participant HVM as HomeViewModel
+    participant ProfileUC as GetUserProfileUseCase
+    participant PagingUC as GetNotificationsPagingUseCase
+    participant LP as LazyPagingItems
+    participant Repo as NotificationsRepositoryImpl
+    participant PS as NotificationsPagingSource
+    participant API as NotificationsApi
+
+    User->>HS: 進入 HomeDashboard
+    HS->>HVM: hiltViewModel()
+    activate HVM
+    HVM->>ProfileUC: observeProfile()
+    ProfileUC-->>HVM: Flow<UserProfile?>
+    HVM-->>HS: uiState.userProfile 更新（歡迎卡）
+
+    HVM->>PagingUC: invoke(pageSize=20)
+    PagingUC->>Repo: getNotificationsPagingData(20)
+    Repo-->>HVM: Flow<PagingData<Notification>>
+    HVM-->>HS: recentNotificationsPagingDataFlow.cachedIn(viewModelScope)
+    HS->>LP: collectAsLazyPagingItems()
+    LP->>PS: load(page=1)
+    PS->>API: GET /api/v1/notifications?page=1&pageSize=20
+    API-->>PS: NotificationsResponseDto
+    PS-->>LP: LoadResult.Page(data, nextKey)
+    LP-->>HS: 顯示近期通知卡片列表
+
+    opt 使用者下拉刷新或點擊「刷新」
+        User->>HS: PullToRefresh / 手動刷新
+        HS->>HVM: onRefresh()
+        HVM->>ProfileUC: refresh()
+        ProfileUC-->>HVM: Result.success / failure
+        HVM-->>HS: uiState.isLoading / error 更新
+
+        HS->>LP: refresh()
+        LP->>PS: 重新載入 page=1
+        PS->>API: GET /api/v1/notifications?page=1&pageSize=20
+        API-->>LP: 最新列表資料
+        LP-->>HS: 依 loadState 顯示 loading / error / retry / append loading
+    end
+    deactivate HVM
+```

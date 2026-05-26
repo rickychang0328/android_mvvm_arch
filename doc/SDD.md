@@ -796,9 +796,10 @@ class AndroidMvvmArchApplication : Application(), Configuration.Provider {
 #### UI 與互動
 
 - **歡迎卡片**：顯示 `displayName`、`email`，背景採用當前 Theme（深/淺色、語言由 Settings DataStore 決定，Home 自動套用）。
-- **快速動作（Quick Actions）**：2 欄網格，預設三個入口：Profile、Settings、Notifications（路由為 `Routes.PROFILE / SETTINGS / NOTIFICATIONS`），可再擴充其他動作。
-- **通知摘要（可擴充）**：可訂閱 `GetUnreadCountUseCase` 將未讀數顯示為徽章或摘要卡；資料由 Notifications 模組與 `NotificationSyncWorker` 維持最新，並受 `notificationsEnabled`（DataStore）影響。
-- **刷新行為**：`HomeViewModel.onRefresh()` 觸發 Profile 同步並寫入 `HomeUiState.error`；UI 目前尚未掛上下拉元件，可後續整合 `PullToRefreshBox`。
+- **快速動作（Quick Actions）**：維持 2 欄佈局，預設三個入口：Profile、Settings、Notifications（路由為 `Routes.PROFILE / SETTINGS / NOTIFICATIONS`）。
+- **近期通知分頁列表（Paging 3）**：重用 Notifications Domain 的 `GetNotificationsPagingUseCase`，在 Home 以卡片形式呈現近期通知摘要（標題、內容、相對時間、通知類型、未讀點）。
+- **刷新行為**：Home 採 `PullToRefreshBox`；一次 refresh 會同時觸發 `HomeViewModel.onRefresh()`（Profile 同步）與 `LazyPagingItems.refresh()`（通知分頁重載）。
+- **錯誤與重試**：支援 `refresh` 初次載入錯誤重試、`append` 載入更多錯誤重試，以及手動「刷新」按鈕。
 
 #### 狀態定義（MVI）
 
@@ -817,20 +818,30 @@ data class QuickAction(
 )
 ```
 
+> Home 的分頁資料不放入 `HomeUiState`，而是由 `HomeViewModel` 直接暴露 `recentNotificationsPagingDataFlow: Flow<PagingData<Notification>>`，並在 Compose 端轉為 `LazyPagingItems`。
+
 #### 資料流與邊界
 
 ```
 HomeViewModel.init
-  ├─► _uiState.isLoading = true
   ├─► quickActions = [Profile, Settings, Notifications]
   ├─► collect GetUserProfileUseCase.observeProfile()
   │       └─► _uiState.userProfile 更新 → HomeContent 歡迎卡渲染
-  └─► launch refresh() 一次性同步遠端（ProfileRepository.refreshProfile）
+  ├─► launch getUserProfileUseCase.refresh()（首次同步 Profile）
+  └─► recentNotificationsPagingDataFlow =
+         GetNotificationsPagingUseCase().cachedIn(viewModelScope)
+           └─► HomeScreen.collectAsLazyPagingItems()
+                 └─► NotificationsPagingSource 分頁載入近期通知
 
 HomeViewModel.onRefresh()
-  └─► _uiState.isLoading = true
-        └─► getUserProfileUseCase.refresh()
-              └─ failure → _uiState.error
+  └─► getUserProfileUseCase.refresh()（更新 Profile）
+        └─ success/failure 更新 _uiState.isLoading / error
+
+HomeScreen (PullToRefresh / 手動刷新)
+  └─► 同步呼叫：
+       1) viewModel.onRefresh()
+       2) lazyPagingItems.refresh()
+           └─ refresh/append loadState 決定 loading/error/retry UI
 ```
 
 資料來源沿用 Mock API（`MockApiInterceptor`）+ Room 快取，無需真實後端即可展示 Dashboard。
