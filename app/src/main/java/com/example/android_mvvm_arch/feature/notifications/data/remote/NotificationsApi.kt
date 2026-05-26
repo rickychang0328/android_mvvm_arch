@@ -5,6 +5,7 @@ import retrofit2.http.GET
 import retrofit2.http.PATCH
 import retrofit2.http.POST
 import retrofit2.http.Path
+import retrofit2.http.Query
 
 /**
  * 通知 API 抽象介面。
@@ -15,11 +16,18 @@ import retrofit2.http.Path
 interface NotificationsApi {
 
     @GET("api/v1/notifications")
-    suspend fun getNotifications(): NotificationsResponseDto
+    suspend fun getNotifications(
+        @Query("page") page: Int = 1,
+        @Query("pageSize") pageSize: Int = DEFAULT_PAGE_SIZE,
+    ): NotificationsResponseDto
 
     @PATCH("api/v1/notifications/{id}/read")
     suspend fun markAsRead(@Path("id") id: String)
 
     @POST("api/v1/notifications/read-all")
     suspend fun markAllAsRead()
+
+    companion object {
+        const val DEFAULT_PAGE_SIZE = 20
+    }
 }

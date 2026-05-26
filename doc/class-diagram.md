@@ -933,12 +933,18 @@ classDiagram
 
     class NotificationsRepository {
         <<interface>>
+        +getNotificationsPagingData(pageSize: Int) Flow~PagingData~Notification~~
         +observeNotifications() Flow~List~Notification~~
         +observeUnreadCount() Flow~Int~
         +refresh() Result~Unit~
         +markAsRead(id: String) Result~Unit~
         +markAllAsRead() Result~Unit~
         +clearAll()
+    }
+
+    class GetNotificationsPagingUseCase {
+        -notificationsRepository: NotificationsRepository
+        +invoke(pageSize: Int) Flow~PagingData~Notification~~
     }
 
     class GetNotificationsUseCase {
@@ -989,9 +995,17 @@ classDiagram
         +clearAll()
     }
 
+    class NotificationsPagingSource {
+        -notificationsApi: NotificationsApi
+        -notificationMapper: NotificationMapper
+        -notificationDao: NotificationDao
+        +load(params: LoadParams~Int~) LoadResult~Int, Notification~
+        +getRefreshKey(state: PagingState~Int, Notification~) Int?
+    }
+
     class NotificationsApi {
         <<interface>>
-        +getNotifications() NotificationsResponseDto
+        +getNotifications(page: Int, pageSize: Int) NotificationsResponseDto
         +markAsRead(id: String)
         +markAllAsRead()
     }
@@ -1007,6 +1021,8 @@ classDiagram
 
     class NotificationsResponseDto {
         +items: List~NotificationDto~
+        +nextPage: Int?
+        +hasMore: Boolean
     }
 
     class NotificationMapper {
@@ -1019,6 +1035,7 @@ classDiagram
         -notificationsApi: NotificationsApi
         -notificationDao: NotificationDao
         -notificationMapper: NotificationMapper
+        +getNotificationsPagingData(pageSize: Int) Flow~PagingData~Notification~~
         +observeNotifications() Flow~List~Notification~~
         +observeUnreadCount() Flow~Int~
         +refresh() Result~Unit~
@@ -1066,10 +1083,11 @@ classDiagram
     }
 
     class NotificationsViewModel {
-        -getNotificationsUseCase: GetNotificationsUseCase
-        -refreshNotificationsUseCase: RefreshNotificationsUseCase
+        -getNotificationsPagingUseCase: GetNotificationsPagingUseCase
+        -getUnreadCountUseCase: GetUnreadCountUseCase
         -markNotificationReadUseCase: MarkNotificationReadUseCase
         -markAllNotificationsReadUseCase: MarkAllNotificationsReadUseCase
+        +pagingDataFlow: Flow~PagingData~Notification~~
         +uiState: StateFlow~NotificationsUiState~
         +uiEvent: SharedFlow~NotificationsUiEvent~
         +onIntent(intent: NotificationsIntent)
@@ -1094,19 +1112,24 @@ classDiagram
     NotificationsRepositoryImpl --> NotificationsApi
     NotificationsRepositoryImpl --> NotificationDao
     NotificationsRepositoryImpl --> NotificationMapper
+    NotificationsRepositoryImpl --> NotificationsPagingSource
+    NotificationsPagingSource --> NotificationsApi
+    NotificationsPagingSource --> NotificationMapper
+    NotificationsPagingSource --> NotificationDao
     NotificationMapper --> NotificationDto
     NotificationMapper --> NotificationEntity
     NotificationMapper --> Notification
     NotificationsResponseDto --> NotificationDto
 
+    GetNotificationsPagingUseCase --> NotificationsRepository
     GetNotificationsUseCase --> NotificationsRepository
     RefreshNotificationsUseCase --> NotificationsRepository
     MarkNotificationReadUseCase --> NotificationsRepository
     MarkAllNotificationsReadUseCase --> NotificationsRepository
     GetUnreadCountUseCase --> NotificationsRepository
 
-    NotificationsViewModel --> GetNotificationsUseCase
-    NotificationsViewModel --> RefreshNotificationsUseCase
+    NotificationsViewModel --> GetNotificationsPagingUseCase
+    NotificationsViewModel --> GetUnreadCountUseCase
     NotificationsViewModel --> MarkNotificationReadUseCase
     NotificationsViewModel --> MarkAllNotificationsReadUseCase
     NotificationsViewModel --> NotificationsUiState

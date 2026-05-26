@@ -28,6 +28,7 @@
    - 6.3 [Settings 設定功能](#63-settings-設定功能)
    - 6.4 [Notifications 通知功能](#64-notifications-通知功能)
 - 6.5 [HomeDashboard 主頁功能](#65-homedashboard-主頁功能)
+   - 6.6 [Paging 3 列表模板](#66-paging-3-列表模板)
 7. [安全設計（DLP）](#7-安全設計dlp)
 8. [錯誤處理策略](#8-錯誤處理策略)
 9. [導航設計](#9-導航設計)
@@ -606,6 +607,14 @@ sealed interface SettingsUiEvent {
 
 > 登入後使用者可從個人資料頁 TopAppBar 的鈴鐺圖示（含未讀數量徽章）進入通知列表，瀏覽系統公告、行銷活動與活動提醒，下拉重新整理、單筆/全部標記為已讀；App 在背景每 15 分鐘同步最新通知，若有新項目則彈出系統通知，點擊後 deep link 回到通知列表。
 
+#### Paging 3 整合（2026-05）
+
+- 列表渲染改為 `LazyPagingItems<Notification>`，由 `NotificationsViewModel.pagingDataFlow` 提供，並透過 `cachedIn(viewModelScope)` 避免重建分頁流。
+- Data Layer 新增 `NotificationsPagingSource`（`feature/notifications/data/paging/`），依 `page/pageSize` 呼叫 `NotificationsApi.getNotifications(...)` 並回傳 `LoadResult.Page`。
+- `NotificationsApi` 與 `NotificationsResponseDto` 擴充分頁欄位：`page`、`pageSize`、`next_page`、`has_more`；Mock API 支援 query 並保留未帶參數時回第一頁的相容行為。
+- 為維持未讀徽章與 Worker 的既有能力，PagingSource 在載入頁面時同步寫入 Room，`GetUnreadCountUseCase` 與 `NotificationSyncWorker` 無需改動流程。
+- `markAsRead` / `markAllAsRead` 成功後會觸發列表 refresh，確保已讀狀態即時反映在 Paging UI。
+
 #### 元件職責總表
 
 | 類別 | 位置 | 職責 |
@@ -835,6 +844,19 @@ HomeViewModel.onRefresh()
 | Settings（DataStore） | Home 不直接寫入 DataStore，但 Theme / 語言 / `notificationsEnabled` 由 `SettingsDataStore` 決定並全域套用；快速動作連至 Settings 供使用者調整偏好。 |
 | Notifications | 快速動作導向 `NotificationsScreen`；未讀資料由 `NotificationsRepository` + `NotificationSyncWorker`（15 分鐘輪詢，受 `notificationsEnabled` 影響）維持最新，Home 可訂閱 `GetUnreadCountUseCase` 作為摘要徽章或卡片。 |
 | Navigation | 新增 `Routes.HOME` 節點於 `AppNavGraph`，與其他頁一致使用 `NavHost` + `hiltViewModel` 注入。 |
+
+---
+
+### 6.6 Paging 3 列表模板
+
+為讓後續 ActivityLog 等列表能快速套用，本專案將 Notifications 抽象為可複用的 Paging 模板：
+
+1. **API 規格**：列表端點統一支援 `page`、`pageSize`，回傳 `items + next_page + has_more`。
+2. **Data Layer**：每個列表建立 `feature/<feature>/data/paging/*PagingSource.kt`，`load()` 只負責分頁拉取、錯誤映射與必要快取同步。
+3. **Repository 介面**：提供 `Flow<PagingData<DomainModel>>`（例如 `getNotificationsPagingData()`），由 `Pager(PagingConfig(...))` 組裝。
+4. **UseCase**：建立對應 `Get*PagingUseCase`，保持 Presentation 僅依賴 Domain。
+5. **Presentation (MVI + Compose)**：ViewModel 暴露 `pagingDataFlow.cachedIn(viewModelScope)`；Screen 使用 `collectAsLazyPagingItems()`，統一處理 `loadState.refresh/append` 的 loading、error、retry、refresh。
+6. **與既有快取協調**：若同時需要未讀徽章、背景同步、離線資料，PagingSource 可在成功載入後寫入 Room；標記已讀後觸發 `lazyPagingItems.refresh()` 以對齊遠端狀態。
 
 ---
 

@@ -888,3 +888,81 @@ sequenceDiagram
     deactivate PVM
     PS-->>User: 頭像即時更新（Coil）+ Snackbar
 ```
+
+---
+
+## 21. Notifications 分頁載入流程（Paging 3）
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant NS as NotificationsScreen
+    participant NVM as NotificationsViewModel
+    participant LP as LazyPagingItems
+    participant UC as GetNotificationsPagingUseCase
+    participant Repo as NotificationsRepositoryImpl
+    participant PS as NotificationsPagingSource
+    participant API as NotificationsApi
+    participant Mock as MockApiInterceptor
+    participant DAO as NotificationDao
+
+    User->>NS: 進入通知頁
+    NS->>NVM: collect pagingDataFlow
+    NVM->>UC: invoke(pageSize=20)
+    UC->>Repo: getNotificationsPagingData(20)
+    Repo-->>NVM: Flow<PagingData<Notification>>
+    NVM-->>NS: pagingDataFlow.cachedIn(viewModelScope)
+    NS->>LP: collectAsLazyPagingItems()
+
+    LP->>PS: load(page=1, pageSize=20)
+    PS->>API: GET /api/v1/notifications?page=1&pageSize=20
+    API->>Mock: 攔截並分頁切片
+    Mock-->>API: {items, next_page, has_more}
+    API-->>PS: NotificationsResponseDto
+    PS->>DAO: upsertAll(loadedPageEntities)
+    PS-->>LP: LoadResult.Page(data, nextKey)
+    LP-->>NS: render list + refresh/append loadState
+
+    opt 使用者滾動到底部
+        LP->>PS: load(page=next_page)
+        PS->>API: GET /api/v1/notifications?page=n&pageSize=20
+        API-->>PS: 下一頁資料
+        PS-->>LP: LoadResult.Page(...)
+        LP-->>NS: append 成功或錯誤（可 retry）
+    end
+```
+
+---
+
+## 22. 標記已讀後刷新流程（Paging 3）
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant NS as NotificationsScreen
+    participant NVM as NotificationsViewModel
+    participant MarkUC as MarkNotificationReadUseCase
+    participant Repo as NotificationsRepositoryImpl
+    participant API as NotificationsApi
+    participant Mock as MockApiInterceptor
+    participant DAO as NotificationDao
+    participant LP as LazyPagingItems
+
+    User->>NS: 點擊未讀通知
+    NS->>NVM: onIntent(MarkRead(id))
+    NVM->>MarkUC: invoke(id)
+    MarkUC->>Repo: markAsRead(id)
+    Repo->>API: PATCH /api/v1/notifications/{id}/read
+    API->>Mock: 更新 mock 通知狀態為已讀
+    Mock-->>API: 204 No Content
+    Repo->>DAO: markAsRead(id)
+    Repo-->>MarkUC: Result.success(Unit)
+    MarkUC-->>NVM: success
+    NVM-->>NS: uiEvent.RefreshList
+    NS->>LP: refresh()
+    LP->>API: 重新載入第一頁
+    API-->>LP: 最新 is_read 狀態
+    LP-->>NS: UI 已讀狀態即時更新
+```

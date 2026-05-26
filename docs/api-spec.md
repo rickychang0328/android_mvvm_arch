@@ -207,13 +207,20 @@ Content-Type: multipart/form-data
 
 ### `GET /api/v1/notifications`
 
-回傳目前使用者的通知列表，依 `created_at` 由新到舊排序。
+回傳目前使用者的通知列表（分頁），依 `created_at` 由新到舊排序。
 
 **Headers**
 
 ```
 Authorization: Bearer {access_token}
 ```
+
+**Query 參數**
+
+| 名稱 | 類型 | 必填 | 預設值 | 說明 |
+|------|------|------|--------|------|
+| page | number | 否 | 1 | 1-based 頁碼 |
+| pageSize | number | 否 | 20 | 單頁筆數 |
 
 **Response `200 OK`**
 
@@ -236,7 +243,9 @@ Authorization: Bearer {access_token}
       "is_read": false,
       "created_at": 1748255400000
     }
-  ]
+  ],
+  "next_page": 2,
+  "has_more": true
 }
 ```
 
@@ -249,8 +258,10 @@ Authorization: Bearer {access_token}
 | items[].type | string | 類型，允許 `SYSTEM` / `PROMOTION` / `ACTIVITY`，未知值由 Client Mapper 視為 `SYSTEM` |
 | items[].is_read | boolean | 是否已讀 |
 | items[].created_at | number | epoch millis |
+| next_page | number\|null | 下一頁頁碼；若無下一頁則為 `null` |
+| has_more | boolean | 是否尚有更多資料 |
 
-Mock 階段固定回傳 6–7 筆 demo 資料，且 `created_at` 由 `System.currentTimeMillis()` 動態計算。
+Mock 階段固定回傳 6–7 筆 demo 資料，且 `created_at` 由 `System.currentTimeMillis()` 動態計算；若未帶 query 參數，視同 `page=1&pageSize=20`。
 
 **Response `401 Unauthorized`**
 

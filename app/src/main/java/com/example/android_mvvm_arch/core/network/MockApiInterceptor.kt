@@ -43,9 +43,16 @@ class MockApiInterceptor @Inject constructor() : Interceptor {
             method == "PUT" && path.endsWith("/api/v1/users/me/avatar") ->
                 handleUploadAvatar(request.header("Authorization"))
             method == "GET" && path.endsWith("/api/v1/notifications") ->
-                handleListNotifications(request.header("Authorization"))
+                handleListNotifications(
+                    authHeader = request.header("Authorization"),
+                    pageParam = request.url.queryParameter("page"),
+                    pageSizeParam = request.url.queryParameter("pageSize"),
+                )
             method == "PATCH" && path.matches(NOTIFICATIONS_READ_REGEX) ->
-                handleMarkNotificationRead(request.header("Authorization"))
+                handleMarkNotificationRead(
+                    authHeader = request.header("Authorization"),
+                    path = path,
+                )
             method == "POST" && path.endsWith("/api/v1/notifications/read-all") ->
                 handleMarkAllNotificationsRead(request.header("Authorization"))
             else -> 404 to """{"error":"not_found","message":"Endpoint not found."}"""
@@ -191,82 +198,62 @@ class MockApiInterceptor @Inject constructor() : Interceptor {
         """.trimIndent()
     }
 
-    private fun handleListNotifications(authHeader: String?): Pair<Int, String> {
+    private fun handleListNotifications(
+        authHeader: String?,
+        pageParam: String?,
+        pageSizeParam: String?,
+    ): Pair<Int, String> {
         if (!isValidToken(authHeader)) {
             return 401 to """{"error":"unauthorized","message":"Invalid or expired token."}"""
         }
-        val now = System.currentTimeMillis()
-        val items = listOf(
+        val page = pageParam?.toIntOrNull()?.coerceAtLeast(1) ?: 1
+        val pageSize = pageSizeParam?.toIntOrNull()?.coerceAtLeast(1) ?: DEFAULT_NOTIFICATION_PAGE_SIZE
+        val startIndex = (page - 1) * pageSize
+        val (pageItems, nextPage, hasMore) = synchronized(notificationsLock) {
+            ensureNotificationsSeeded()
+            val boundedStart = startIndex.coerceAtMost(notificationsStore.size)
+            val boundedEnd = (boundedStart + pageSize).coerceAtMost(notificationsStore.size)
+            val localHasMore = boundedEnd < notificationsStore.size
+            val localNextPage = if (localHasMore) page + 1 else null
+            Triple(
+                notificationsStore.subList(boundedStart, boundedEnd).toList(),
+                localNextPage,
+                localHasMore,
+            )
+        }
+        val joined = pageItems.joinToString(separator = ",\n") { item ->
             mockNotification(
-                id = "ntf_001",
-                title = "歡迎使用本應用",
-                body = "感謝您下載使用，點擊查看新手導覽，快速熟悉所有功能。",
-                type = "SYSTEM",
-                isRead = false,
-                createdAt = now - 5 * 60_000L,
-            ),
-            mockNotification(
-                id = "ntf_002",
-                title = "限時優惠",
-                body = "升級會員享有 8 折優惠，並可解鎖進階主題與雲端同步。",
-                type = "PROMOTION",
-                isRead = false,
-                createdAt = now - 35 * 60_000L,
-            ),
-            mockNotification(
-                id = "ntf_003",
-                title = "系統維護通知",
-                body = "本系統將於本週日凌晨 02:00–04:00 進行維護，期間可能無法登入。",
-                type = "SYSTEM",
-                isRead = true,
-                createdAt = now - 3 * 60 * 60_000L,
-            ),
-            mockNotification(
-                id = "ntf_004",
-                title = "新活動上線",
-                body = "週末打卡活動已開放報名，完成任務可獲得限定徽章。",
-                type = "ACTIVITY",
-                isRead = false,
-                createdAt = now - 8 * 60 * 60_000L,
-            ),
-            mockNotification(
-                id = "ntf_005",
-                title = "個人資料同步成功",
-                body = "您的個人資料已自雲端成功同步，最後同步時間已更新。",
-                type = "SYSTEM",
-                isRead = true,
-                createdAt = now - 26 * 60 * 60_000L,
-            ),
-            mockNotification(
-                id = "ntf_006",
-                title = "推薦給您的內容",
-                body = "根據您的偏好，為您挑選了 5 篇精選內容，立即查看。",
-                type = "PROMOTION",
-                isRead = false,
-                createdAt = now - 2 * 24 * 60 * 60_000L,
-            ),
-            mockNotification(
-                id = "ntf_007",
-                title = "週末工作坊",
-                body = "本週六線上工作坊「Compose 實戰」名額有限，報名從速。",
-                type = "ACTIVITY",
-                isRead = true,
-                createdAt = now - 3 * 24 * 60 * 60_000L,
-            ),
-        )
-        val joined = items.joinToString(separator = ",\n")
+                id = item.id,
+                title = item.title,
+                body = item.body,
+                type = item.type,
+                isRead = item.isRead,
+                createdAt = item.createdAt,
+            )
+        }
         return 200 to """
             {
               "items": [
 $joined
-              ]
+              ],
+              "next_page": ${nextPage?.toString() ?: "null"},
+              "has_more": $hasMore
             }
         """.trimIndent()
     }
 
-    private fun handleMarkNotificationRead(authHeader: String?): Pair<Int, String> {
+    private fun handleMarkNotificationRead(authHeader: String?, path: String): Pair<Int, String> {
         if (!isValidToken(authHeader)) {
             return 401 to """{"error":"unauthorized","message":"Invalid or expired token."}"""
+        }
+        val id = path.substringAfter("/api/v1/notifications/").substringBefore("/read")
+        synchronized(notificationsLock) {
+            ensureNotificationsSeeded()
+            val index = notificationsStore.indexOfFirst { it.id == id }
+            if (index >= 0) {
+                val item = notificationsStore[index]
+                notificationsStore[index] = item.copy(isRead = true)
+            }
         }
         return 204 to ""
     }
@@ -274,6 +261,15 @@ $joined
     private fun handleMarkAllNotificationsRead(authHeader: String?): Pair<Int, String> {
         if (!isValidToken(authHeader)) {
             return 401 to """{"error":"unauthorized","message":"Invalid or expired token."}"""
+        }
+        synchronized(notificationsLock) {
+            ensureNotificationsSeeded()
+            for (index in notificationsStore.indices) {
+                val item = notificationsStore[index]
+                if (!item.isRead) {
+                    notificationsStore[index] = item.copy(isRead = true)
+                }
+            }
         }
         return 204 to ""
     }
@@ -325,14 +321,92 @@ $joined
         return buffer.readUtf8()
     }
 
+    private fun ensureNotificationsSeeded() {
+        if (notificationsStore.isNotEmpty()) return
+        val now = System.currentTimeMillis()
+        notificationsStore.addAll(
+            listOf(
+                NotificationSeed(
+                    id = "ntf_001",
+                    title = "歡迎使用本應用",
+                    body = "感謝您下載使用，點擊查看新手導覽，快速熟悉所有功能。",
+                    type = "SYSTEM",
+                    isRead = false,
+                    createdAt = now - 5 * 60_000L,
+                ),
+                NotificationSeed(
+                    id = "ntf_002",
+                    title = "限時優惠",
+                    body = "升級會員享有 8 折優惠，並可解鎖進階主題與雲端同步。",
+                    type = "PROMOTION",
+                    isRead = false,
+                    createdAt = now - 35 * 60_000L,
+                ),
+                NotificationSeed(
+                    id = "ntf_003",
+                    title = "系統維護通知",
+                    body = "本系統將於本週日凌晨 02:00–04:00 進行維護，期間可能無法登入。",
+                    type = "SYSTEM",
+                    isRead = true,
+                    createdAt = now - 3 * 60 * 60_000L,
+                ),
+                NotificationSeed(
+                    id = "ntf_004",
+                    title = "新活動上線",
+                    body = "週末打卡活動已開放報名，完成任務可獲得限定徽章。",
+                    type = "ACTIVITY",
+                    isRead = false,
+                    createdAt = now - 8 * 60 * 60_000L,
+                ),
+                NotificationSeed(
+                    id = "ntf_005",
+                    title = "個人資料同步成功",
+                    body = "您的個人資料已自雲端成功同步，最後同步時間已更新。",
+                    type = "SYSTEM",
+                    isRead = true,
+                    createdAt = now - 26 * 60 * 60_000L,
+                ),
+                NotificationSeed(
+                    id = "ntf_006",
+                    title = "推薦給您的內容",
+                    body = "根據您的偏好，為您挑選了 5 篇精選內容，立即查看。",
+                    type = "PROMOTION",
+                    isRead = false,
+                    createdAt = now - 2 * 24 * 60 * 60_000L,
+                ),
+                NotificationSeed(
+                    id = "ntf_007",
+                    title = "週末工作坊",
+                    body = "本週六線上工作坊「Compose 實戰」名額有限，報名從速。",
+                    type = "ACTIVITY",
+                    isRead = true,
+                    createdAt = now - 3 * 24 * 60 * 60_000L,
+                ),
+            ),
+        )
+    }
+
+    private data class NotificationSeed(
+        val id: String,
+        val title: String,
+        val body: String,
+        val type: String,
+        val isRead: Boolean,
+        val createdAt: Long,
+    )
+
     companion object {
         private val JSON_MEDIA_TYPE = "application/json".toMediaType()
         private val NOTIFICATIONS_READ_REGEX =
             """^/api/v1/notifications/[^/]+/read$""".toRegex()
+        private const val DEFAULT_NOTIFICATION_PAGE_SIZE = 20
         const val DEMO_EMAIL = "demo@example.com"
         const val DEMO_PASSWORD = "password123"
         const val MOCK_ACCESS_TOKEN = "mock_access_token_demo"
         const val MOCK_REFRESH_TOKEN = "mock_refresh_token_demo"
         const val DEMO_RESET_TOKEN = "demo_reset_token_123"
     }
+
+    private val notificationsLock = Any()
+    private val notificationsStore = mutableListOf<NotificationSeed>()
 }

@@ -6,4 +6,6 @@ import com.squareup.moshi.JsonClass
 @JsonClass(generateAdapter = true)
 data class NotificationsResponseDto(
     @Json(name = "items") val items: List<NotificationDto>,
+    @Json(name = "next_page") val nextPage: Int?,
+    @Json(name = "has_more") val hasMore: Boolean,
 )

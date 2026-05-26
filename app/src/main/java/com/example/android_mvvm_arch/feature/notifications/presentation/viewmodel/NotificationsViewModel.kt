@@ -1,33 +1,42 @@
 package com.example.android_mvvm_arch.feature.notifications.presentation.viewmodel
 
-import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.paging.PagingData
+import androidx.paging.cachedIn
+import androidx.lifecycle.ViewModel
 import com.example.android_mvvm_arch.core.network.ApiException
-import com.example.android_mvvm_arch.feature.notifications.domain.usecase.GetNotificationsUseCase
+import com.example.android_mvvm_arch.feature.notifications.domain.model.Notification
+import com.example.android_mvvm_arch.feature.notifications.domain.usecase.GetNotificationsPagingUseCase
+import com.example.android_mvvm_arch.feature.notifications.domain.usecase.GetUnreadCountUseCase
 import com.example.android_mvvm_arch.feature.notifications.domain.usecase.MarkAllNotificationsReadUseCase
 import com.example.android_mvvm_arch.feature.notifications.domain.usecase.MarkNotificationReadUseCase
-import com.example.android_mvvm_arch.feature.notifications.domain.usecase.RefreshNotificationsUseCase
 import com.example.android_mvvm_arch.feature.notifications.presentation.state.NotificationsIntent
 import com.example.android_mvvm_arch.feature.notifications.presentation.state.NotificationsUiEvent
 import com.example.android_mvvm_arch.feature.notifications.presentation.state.NotificationsUiState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
 class NotificationsViewModel @Inject constructor(
-    private val getNotificationsUseCase: GetNotificationsUseCase,
-    private val refreshNotificationsUseCase: RefreshNotificationsUseCase,
+    getNotificationsPagingUseCase: GetNotificationsPagingUseCase,
+    private val getUnreadCountUseCase: GetUnreadCountUseCase,
     private val markNotificationReadUseCase: MarkNotificationReadUseCase,
     private val markAllNotificationsReadUseCase: MarkAllNotificationsReadUseCase,
 ) : ViewModel() {
+
+    val pagingDataFlow: Flow<PagingData<Notification>> =
+        getNotificationsPagingUseCase().cachedIn(viewModelScope)
 
     private val _uiState = MutableStateFlow(NotificationsUiState())
     val uiState: StateFlow<NotificationsUiState> = _uiState.asStateFlow()
@@ -35,60 +44,45 @@ class NotificationsViewModel @Inject constructor(
     private val _uiEvent = MutableSharedFlow<NotificationsUiEvent>()
     val uiEvent: SharedFlow<NotificationsUiEvent> = _uiEvent.asSharedFlow()
 
+    private val unreadCountFlow = getUnreadCountUseCase()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
     init {
         viewModelScope.launch {
-            getNotificationsUseCase().collect { items ->
-                _uiState.update { state ->
-                    state.copy(
-                        items = items,
-                        isLoading = if (items.isNotEmpty()) false else state.isLoading,
-                    )
-                }
+            unreadCountFlow.collect { count ->
+                _uiState.update { it.copy(unreadCount = count) }
             }
         }
-        refresh(initial = true)
     }
 
     fun onIntent(intent: NotificationsIntent) {
         when (intent) {
-            NotificationsIntent.Load -> refresh(initial = true)
-            NotificationsIntent.Refresh -> refresh(initial = false)
+            NotificationsIntent.Load,
+            NotificationsIntent.Refresh -> emitRefreshList()
             is NotificationsIntent.MarkRead -> markRead(intent.id)
             NotificationsIntent.MarkAllRead -> markAllRead()
-            NotificationsIntent.Retry -> refresh(initial = true)
+            NotificationsIntent.Retry -> emitRetryList()
         }
     }
 
-    private fun refresh(initial: Boolean) {
+    private fun emitRefreshList() {
         viewModelScope.launch {
-            _uiState.update { state ->
-                state.copy(
-                    isLoading = initial && state.items.isEmpty(),
-                    isRefreshing = !initial,
-                    errorMessage = null,
-                )
-            }
-            refreshNotificationsUseCase()
-                .onSuccess {
-                    _uiState.update { it.copy(isLoading = false, isRefreshing = false) }
-                }
-                .onFailure { error ->
-                    val message = mapError(error, fallback = "載入通知失敗，請稍後再試。")
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            isRefreshing = false,
-                            errorMessage = message,
-                        )
-                    }
-                    _uiEvent.emit(NotificationsUiEvent.ShowError(message))
-                }
+            _uiEvent.emit(NotificationsUiEvent.RefreshList)
+        }
+    }
+
+    private fun emitRetryList() {
+        viewModelScope.launch {
+            _uiEvent.emit(NotificationsUiEvent.RetryList)
         }
     }
 
     private fun markRead(id: String) {
         viewModelScope.launch {
             markNotificationReadUseCase(id)
+                .onSuccess {
+                    _uiEvent.emit(NotificationsUiEvent.RefreshList)
+                }
                 .onFailure { error ->
                     val message = mapError(error, fallback = "標記為已讀失敗。")
                     _uiEvent.emit(NotificationsUiEvent.ShowError(message))
@@ -101,6 +95,7 @@ class NotificationsViewModel @Inject constructor(
             markAllNotificationsReadUseCase()
                 .onSuccess {
                     _uiEvent.emit(NotificationsUiEvent.AllMarkedRead)
+                    _uiEvent.emit(NotificationsUiEvent.RefreshList)
                 }
                 .onFailure { error ->
                     val message = mapError(error, fallback = "全部標記已讀失敗。")

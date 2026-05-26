@@ -1,8 +1,13 @@
 package com.example.android_mvvm_arch.feature.notifications.data.repo
 
+import androidx.paging.Pager
+import androidx.paging.PagingConfig
+import androidx.paging.PagingData
 import com.example.android_mvvm_arch.core.network.safeApiCall
 import com.example.android_mvvm_arch.feature.notifications.data.local.NotificationDao
+import com.example.android_mvvm_arch.feature.notifications.data.local.NotificationEntity
 import com.example.android_mvvm_arch.feature.notifications.data.mapper.NotificationMapper
+import com.example.android_mvvm_arch.feature.notifications.data.paging.NotificationsPagingSource
 import com.example.android_mvvm_arch.feature.notifications.data.remote.NotificationsApi
 import com.example.android_mvvm_arch.feature.notifications.domain.model.Notification
 import com.example.android_mvvm_arch.feature.notifications.domain.repo.NotificationsRepository
@@ -24,6 +29,21 @@ class NotificationsRepositoryImpl @Inject constructor(
     private val notificationMapper: NotificationMapper,
 ) : NotificationsRepository {
 
+    override fun getNotificationsPagingData(pageSize: Int): Flow<PagingData<Notification>> =
+        Pager(
+            config = PagingConfig(
+                pageSize = pageSize,
+                enablePlaceholders = false,
+            ),
+            pagingSourceFactory = {
+                NotificationsPagingSource(
+                    notificationsApi = notificationsApi,
+                    notificationMapper = notificationMapper,
+                    notificationDao = notificationDao,
+                )
+            },
+        ).flow
+
     override fun observeNotifications(): Flow<List<Notification>> =
         notificationDao.observeAll().map { list ->
             list.map(notificationMapper::toDomain)
@@ -31,11 +51,25 @@ class NotificationsRepositoryImpl @Inject constructor(
 
     override fun observeUnreadCount(): Flow<Int> = notificationDao.observeUnreadCount()
 
-    override suspend fun refresh(): Result<Unit> = safeApiCall {
-        notificationsApi.getNotifications()
-    }.map { response ->
-        val entities = response.items.map(notificationMapper::toEntity)
-        notificationDao.upsertAll(entities)
+    override suspend fun refresh(): Result<Unit> {
+        val allEntities = mutableListOf<NotificationEntity>()
+        var page = 1
+        while (true) {
+            val result = safeApiCall {
+                notificationsApi.getNotifications(page = page, pageSize = REFRESH_PAGE_SIZE)
+            }
+            val response = result.getOrElse { return Result.failure(it) }
+            allEntities += response.items.map(notificationMapper::toEntity)
+            if (!response.hasMore) {
+                break
+            }
+            page = response.nextPage ?: (page + 1)
+        }
+        notificationDao.clearAll()
+        if (allEntities.isNotEmpty()) {
+            notificationDao.upsertAll(allEntities)
+        }
+        return Result.success(Unit)
     }
 
     override suspend fun markAsRead(id: String): Result<Unit> = safeApiCall {
@@ -52,5 +86,9 @@ class NotificationsRepositoryImpl @Inject constructor(
 
     override suspend fun clearAll() {
         notificationDao.clearAll()
+    }
+
+    companion object {
+        private const val REFRESH_PAGE_SIZE = 50
     }
 }

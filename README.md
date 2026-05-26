@@ -7,7 +7,7 @@
 - **Auth**：登入、註冊、忘記/重設密碼流程；成功後導向 `Routes.HOME`。
 - **Profile**：檢視與編輯個人資料，Room 快取 + Mock API 刷新。
 - **Settings**：深色模式、語言切換、通知開關及隱私偏好皆寫入 DataStore (`app_settings`)；變更即時套用全域 Theme。
-- **Notifications**：列表、下拉刷新、單筆/全部設已讀；未讀徽章，並透過 `NotificationSyncWorker` (15 分鐘) 依 `notificationsEnabled` 同步與推播。
+- **Notifications**：採 Paging 3（Compose `LazyPagingItems`）列表、下拉刷新、單筆/全部設已讀；未讀徽章，並透過 `NotificationSyncWorker` (15 分鐘) 依 `notificationsEnabled` 同步與推播。
 
 ### 技術與依賴
 - Kotlin 2.2.x、AGP 9.2.x、Gradle 9.4.x、KSP
@@ -38,7 +38,8 @@
 
 ### Mock API 與資料來源
 - 所有 API 由 `MockApiInterceptor` 提供固定回應；無需後端即可登入、讀寫 Profile 或通知。
-- Profile / Notifications 採 Offline-first：Repository 先寫入 Room，再由 Flow 供 UI 訂閱。
+- Profile 採 Offline-first：Repository 先寫入 Room，再由 Flow 供 UI 訂閱。
+- Notifications 清單採遠端分頁（Paging 3 + `NotificationsPagingSource`）；同時將已載入頁同步寫入 Room，維持未讀徽章與背景同步一致。
 
 ### 設定、通知與背景工作
 - DataStore (`SettingsDataStore`) 儲存主題、語言、通知開關與隱私偏好；HomeDashboard、Profile、Notifications 均跟隨其狀態。

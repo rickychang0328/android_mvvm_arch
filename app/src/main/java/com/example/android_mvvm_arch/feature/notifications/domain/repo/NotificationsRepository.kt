@@ -1,6 +1,7 @@
 package com.example.android_mvvm_arch.feature.notifications.domain.repo
 
 import com.example.android_mvvm_arch.feature.notifications.domain.model.Notification
+import androidx.paging.PagingData
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -13,6 +14,7 @@ import kotlinx.coroutines.flow.Flow
  * + `MockApiInterceptor` 模擬伺服器，未來可替換為 FCM / 真實後端而不影響上層。
  */
 interface NotificationsRepository {
+    fun getNotificationsPagingData(pageSize: Int = 20): Flow<PagingData<Notification>>
     fun observeNotifications(): Flow<List<Notification>>
     fun observeUnreadCount(): Flow<Int>
     suspend fun refresh(): Result<Unit>
