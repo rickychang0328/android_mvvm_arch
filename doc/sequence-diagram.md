@@ -837,3 +837,54 @@ sequenceDiagram
     end
     deactivate MA
 ```
+
+---
+
+## 20. 更換頭像（相簿 / 相機）
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant PS as ProfileScreen
+    participant PVM as ProfileViewModel
+    participant UploadUC as UploadAvatarUseCase
+    participant PR as ProfileRepositoryImpl
+    participant API as ProfileApi
+    participant Mock as MockApiInterceptor
+    participant DAO as ProfileDao
+
+    User->>PS: 點擊頭像編輯 IconButton
+    PS->>PS: ModalBottomSheet（相簿 / 相機）
+
+    alt 選擇相簿
+        PS->>PS: 檢查 READ_MEDIA_IMAGES / READ_EXTERNAL_STORAGE 權限
+        PS->>PS: ActivityResultContracts.StartActivityForResult(Intent.ACTION_PICK)
+        PS-->>User: 選擇圖片 Uri
+        PS->>PS: copyUriToCache(uri) → File
+    else 選擇相機
+        PS->>PS: 檢查 CAMERA + 讀取圖片權限
+        PS->>PS: FileProvider("${applicationId}.fileprovider") 建立 cache File + Uri
+        PS->>PS: ActivityResultContracts.StartActivityForResult(MediaStore.ACTION_IMAGE_CAPTURE, EXTRA_OUTPUT=uri)
+        PS-->>User: 拍照完成，得到 File
+    end
+
+    PS->>PVM: onIntent(UploadAvatar(file))
+    activate PVM
+    PVM->>UploadUC: invoke(file)
+    activate UploadUC
+    UploadUC->>PR: uploadAvatar(file)
+    activate PR
+    PR->>API: PUT /api/v1/users/me/avatar (Multipart avatar)
+    API->>Mock: 攔截並回傳新的 avatar_url（timestamp）
+    Mock-->>API: 200 UserProfileDto
+    PR->>DAO: upsert(ProfileEntity) ← 更新 Room 快取
+    PR-->>UploadUC: Result.success(UserProfile)
+    deactivate PR
+    UploadUC-->>PVM: Result.success(UserProfile)
+    deactivate UploadUC
+    PVM-->>PS: uiState.isUploadingAvatar = false, profile 更新
+    PVM-->>PS: uiEvent ShowMessage("頭像已更新")
+    deactivate PVM
+    PS-->>User: 頭像即時更新（Coil）+ Snackbar
+```

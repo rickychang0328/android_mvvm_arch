@@ -98,6 +98,7 @@ Domain 層是應用程式的核心，**不得引用任何 `android.*` 套件**�
 | `IsLoggedInUseCase` | `feature/auth/domain/usecase` | 查詢是否已登入 |
 | `GetUserProfileUseCase` | `feature/profile/domain/usecase` | 訂閱 / 刷新個人資料 |
 | `UpdateUserProfileUseCase` | `feature/profile/domain/usecase` | 驗證欄位並呼叫 ProfileRepository.update |
+| `UploadAvatarUseCase` | `feature/profile/domain/usecase` | 驗證檔案存在後呼叫 ProfileRepository.uploadAvatar（Multipart） |
 
 #### Use Case 設計原則
 
@@ -115,7 +116,7 @@ Data 層實作 Domain 介面，處理網路與本地資料。
 | 類別 | 位置 | 職責 |
 |------|------|------|
 | `AuthApi` | `feature/auth/data/remote` | Retrofit 介面，定義登入 / 登出端點 |
-| `ProfileApi` | `feature/profile/data/remote` | Retrofit 介面，定義個人資料端點 |
+| `ProfileApi` | `feature/profile/data/remote` | Retrofit 介面，定義個人資料端點（get / update / uploadAvatar Multipart） |
 | `LoginRequestDto` | `feature/auth/data/remote/dto` | 登入請求 DTO |
 | `LoginResponseDto` | `feature/auth/data/remote/dto` | 登入回應 DTO |
 | `UserProfileDto` | `feature/profile/data/remote/dto` | 個人資料回應 DTO |
@@ -127,6 +128,7 @@ Data 層實作 Domain 介面，處理網路與本地資料。
 | `ProfileDao` | `feature/profile/data/local` | Room DAO（observe / upsert / clear） |
 | `AuthRepositoryImpl` | `feature/auth/data/repo` | 實作 AuthRepository |
 | `ProfileRepositoryImpl` | `feature/profile/data/repo` | 實作 ProfileRepository |
+| `file_paths.xml` | `app/src/main/res/xml` | FileProvider cache 路徑，提供相機輸出 URI |
 | `EncryptedTokenStorage` | `core/security` | Token 加密儲存（EncryptedSharedPreferences） |
 | `AppSettings` | `core/datastore` | 應用程式設定資料模型 |
 | `SettingsDataStore` | `core/datastore` | DataStore Preferences 存取介面 |
@@ -456,6 +458,17 @@ ProfileDao.observeProfile()               ← Room Flow
 | displayName | 不得為空 | "Display name cannot be empty." |
 | displayName | ≤ 50 字 | "Display name must be 50 characters or less." |
 | bio | ≤ 200 字 | "Bio must be 200 characters or less." |
+
+#### 頭像上傳（Camera / Gallery）
+
+- 入口：ProfileScreen 頭像區塊上的編輯 IconButton → ModalBottomSheet（相機 / 相簿）
+- 權限：Android 13+ `READ_MEDIA_IMAGES`，Android 12- `READ_EXTERNAL_STORAGE`，相機需 `CAMERA`；缺少權限以 Snackbar 提示
+- 圖片來源：
+  - 相簿：`Intent.ACTION_PICK` 取得 `Uri` → `Context.copyUriToCache()` 轉存 cache File → `ProfileIntent.UploadAvatar(file)`
+  - 相機：`MediaStore.ACTION_IMAGE_CAPTURE` 搭配 `FileProvider("${applicationId}.fileprovider")` 輸出至 cache File
+- UseCase：`UploadAvatarUseCase` 驗證檔案存在 / 非空 → `ProfileRepository.uploadAvatar(file)`（Multipart `avatar` 欄位）
+- Repository：成功回傳後寫回 Room（`ProfileDao.upsert`）並透過 Flow 即時更新 UI；Mock 以 timestamp 產生新的 `avatar_url`
+- UI：上傳時於頭像顯示遮罩 + 進度圈，成功 / 失敗以 Snackbar / `successMessage` 呈現
 
 ### 6.3 Settings 設定功能
 

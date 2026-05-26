@@ -67,6 +67,7 @@ classDiagram
             +observeProfile() Flow~UserProfile?~
             +refreshProfile() Result~UserProfile~
             +updateProfile(update: ProfileUpdate) Result~UserProfile~
+            +uploadAvatar(image: File) Result~UserProfile~
             +clearProfileCache()
         }
         class GetUserProfileUseCase {
@@ -79,6 +80,11 @@ classDiagram
             -profileRepository: ProfileRepository
             -dispatcherProvider: DispatcherProvider
             +invoke(displayName: String, phone: String, bio: String) Result~UserProfile~
+        }
+        class UploadAvatarUseCase {
+            -profileRepository: ProfileRepository
+            -dispatcherProvider: DispatcherProvider
+            +invoke(image: File) Result~UserProfile~
         }
     }
 
@@ -190,6 +196,7 @@ classDiagram
             <<interface>>
             +getProfile() UserProfileDto
             +updateProfile(request: UpdateProfileRequestDto) UserProfileDto
+            +uploadAvatar(avatar: MultipartBody.Part) UserProfileDto
         }
         class UserProfileDto {
             +id: String
@@ -464,6 +471,8 @@ classDiagram
     GetUserProfileUseCase --> DispatcherProvider
     UpdateUserProfileUseCase --> ProfileRepository
     UpdateUserProfileUseCase --> DispatcherProvider
+    UploadAvatarUseCase --> ProfileRepository
+    UploadAvatarUseCase --> DispatcherProvider
     GetAppSettingsUseCase --> SettingsRepository
     UpdateDarkModeUseCase --> SettingsRepository
     UpdateDarkModeUseCase --> DispatcherProvider
@@ -513,6 +522,7 @@ classDiagram
     LoginViewModel --> LoginUseCase
     ProfileViewModel --> GetUserProfileUseCase
     ProfileViewModel --> UpdateUserProfileUseCase
+    ProfileViewModel --> UploadAvatarUseCase
     ProfileViewModel --> LogoutUseCase
     SettingsViewModel --> GetAppSettingsUseCase
     SettingsViewModel --> UpdateDarkModeUseCase

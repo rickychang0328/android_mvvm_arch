@@ -40,6 +40,8 @@ class MockApiInterceptor @Inject constructor() : Interceptor {
                     authHeader = request.header("Authorization"),
                     body = request.body?.let { readBody(it) }.orEmpty(),
                 )
+            method == "PUT" && path.endsWith("/api/v1/users/me/avatar") ->
+                handleUploadAvatar(request.header("Authorization"))
             method == "GET" && path.endsWith("/api/v1/notifications") ->
                 handleListNotifications(request.header("Authorization"))
             method == "PATCH" && path.matches(NOTIFICATIONS_READ_REGEX) ->
@@ -166,6 +168,25 @@ class MockApiInterceptor @Inject constructor() : Interceptor {
               "bio": "$bio",
               "created_at": "2024-01-15T08:30:00Z",
               "updated_at": "2025-03-01T12:00:00Z"
+            }
+        """.trimIndent()
+    }
+
+    private fun handleUploadAvatar(authHeader: String?): Pair<Int, String> {
+        if (!isValidToken(authHeader)) {
+            return 401 to """{"error":"unauthorized","message":"Invalid or expired token."}"""
+        }
+        val timestamp = System.currentTimeMillis()
+        return 200 to """
+            {
+              "id": "usr_001",
+              "email": "$DEMO_EMAIL",
+              "display_name": "Demo User",
+              "avatar_url": "https://api.example.com/avatars/usr_001_$timestamp.png",
+              "phone": "+886912345678",
+              "bio": "Android MVVM sample user.",
+              "created_at": "2024-01-15T08:30:00Z",
+              "updated_at": "2025-05-26T12:00:00Z"
             }
         """.trimIndent()
     }

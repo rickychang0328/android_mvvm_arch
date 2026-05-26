@@ -9,6 +9,7 @@ data class ProfileUiState(
     val bio: String = "",
     val isLoading: Boolean = false,
     val isSaving: Boolean = false,
+    val isUploadingAvatar: Boolean = false,
     val isEditing: Boolean = false,
     val errorMessage: String? = null,
     val successMessage: String? = null,

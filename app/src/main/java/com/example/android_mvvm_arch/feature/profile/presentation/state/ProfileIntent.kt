@@ -1,5 +1,7 @@
 package com.example.android_mvvm_arch.feature.profile.presentation.state
 
+import java.io.File
+
 sealed interface ProfileIntent {
     data object Refresh : ProfileIntent
     data object StartEditing : ProfileIntent
@@ -9,4 +11,5 @@ sealed interface ProfileIntent {
     data class BioChanged(val value: String) : ProfileIntent
     data object SaveProfile : ProfileIntent
     data object Logout : ProfileIntent
+    data class UploadAvatar(val file: File) : ProfileIntent
 }

@@ -9,6 +9,10 @@ import com.example.android_mvvm_arch.feature.profile.domain.model.UserProfile
 import com.example.android_mvvm_arch.feature.profile.domain.repo.ProfileRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.asRequestBody
+import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -34,6 +38,16 @@ class ProfileRepositoryImpl @Inject constructor(
 
     override suspend fun updateProfile(update: ProfileUpdate): Result<UserProfile> = safeApiCall {
         profileApi.updateProfile(profileMapper.toUpdateRequestDto(update))
+    }.map { dto ->
+        val profile = profileMapper.toDomain(dto)
+        profileDao.upsert(profileMapper.toEntity(profile))
+        profile
+    }
+
+    override suspend fun uploadAvatar(image: File): Result<UserProfile> = safeApiCall {
+        val requestBody = image.asRequestBody("image/*".toMediaTypeOrNull())
+        val part = MultipartBody.Part.createFormData("avatar", image.name, requestBody)
+        profileApi.uploadAvatar(part)
     }.map { dto ->
         val profile = profileMapper.toDomain(dto)
         profileDao.upsert(profileMapper.toEntity(profile))

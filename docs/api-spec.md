@@ -158,6 +158,51 @@ Authorization: Bearer {access_token}
 
 ---
 
+### 4.1 `PUT /api/v1/users/me/avatar`
+
+上傳新頭像（Multipart）。
+
+**Headers**
+
+```
+Authorization: Bearer {access_token}
+Content-Type: multipart/form-data
+```
+
+**Request Body**
+
+| 欄位 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| avatar | file | 是 | 圖片檔，建議 JPG/PNG，< 5 MB |
+
+**Response `200 OK`**
+
+```json
+{
+  "id": "usr_001",
+  "email": "demo@example.com",
+  "display_name": "Demo User",
+  "avatar_url": "https://api.example.com/avatars/usr_001_1748250000000.png",
+  "phone": "+886912345678",
+  "bio": "Android MVVM sample user.",
+  "created_at": "2024-01-15T08:30:00Z",
+  "updated_at": "2025-05-26T12:00:00Z"
+}
+```
+
+**Response `401 Unauthorized`**
+
+```json
+{
+  "error": "unauthorized",
+  "message": "Invalid or expired token."
+}
+```
+
+> Mock：`MockApiInterceptor` 忽略檔案內容，回傳帶 timestamp 的 `avatar_url`，並同時更新 Room 快取。
+
+---
+
 ## 5. 取得通知列表
 
 ### `GET /api/v1/notifications`

@@ -7,6 +7,7 @@ import com.example.android_mvvm_arch.feature.auth.domain.usecase.LogoutUseCase
 import com.example.android_mvvm_arch.feature.notifications.domain.usecase.GetUnreadCountUseCase
 import com.example.android_mvvm_arch.feature.profile.domain.usecase.GetUserProfileUseCase
 import com.example.android_mvvm_arch.feature.profile.domain.usecase.UpdateUserProfileUseCase
+import com.example.android_mvvm_arch.feature.profile.domain.usecase.UploadAvatarUseCase
 import com.example.android_mvvm_arch.feature.profile.presentation.state.ProfileIntent
 import com.example.android_mvvm_arch.feature.profile.presentation.state.ProfileUiEvent
 import com.example.android_mvvm_arch.feature.profile.presentation.state.ProfileUiState
@@ -25,6 +26,7 @@ import javax.inject.Inject
 class ProfileViewModel @Inject constructor(
     private val getUserProfileUseCase: GetUserProfileUseCase,
     private val updateUserProfileUseCase: UpdateUserProfileUseCase,
+    private val uploadAvatarUseCase: UploadAvatarUseCase,
     private val logoutUseCase: LogoutUseCase,
     private val getUnreadCountUseCase: GetUnreadCountUseCase,
 ) : ViewModel() {
@@ -86,6 +88,7 @@ class ProfileViewModel @Inject constructor(
             }
             ProfileIntent.SaveProfile -> saveProfile()
             ProfileIntent.Logout -> logout()
+            is ProfileIntent.UploadAvatar -> uploadAvatar(intent.file)
         }
     }
 
@@ -138,6 +141,58 @@ class ProfileViewModel @Inject constructor(
         viewModelScope.launch {
             logoutUseCase()
             _uiEvent.emit(ProfileUiEvent.NavigateToLogin)
+        }
+    }
+
+    private fun uploadAvatar(file: java.io.File) {
+        if (_uiState.value.isUploadingAvatar) return
+
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isUploadingAvatar = true,
+                    errorMessage = null,
+                    successMessage = null,
+                )
+            }
+            uploadAvatarUseCase(file)
+                .onSuccess { profile ->
+                    _uiState.update { state ->
+                        val base = state.copy(
+                            isUploadingAvatar = false,
+                            profile = profile,
+                            successMessage = "頭像已更新",
+                        )
+                        if (state.isEditing) {
+                            base
+                        } else {
+                            base.copy(
+                                displayName = profile.displayName,
+                                phone = profile.phone.orEmpty(),
+                                bio = profile.bio.orEmpty(),
+                            )
+                        }
+                    }
+                    _uiEvent.emit(ProfileUiEvent.ShowMessage("頭像已更新"))
+                }
+                .onFailure { error ->
+                    val message = when (error) {
+                        is ApiException -> error.message
+                        is IllegalArgumentException -> error.message
+                        else -> "頭像上傳失敗，請稍後再試。"
+                    }
+                    _uiState.update {
+                        it.copy(
+                            isUploadingAvatar = false,
+                            errorMessage = message,
+                        )
+                    }
+                    _uiEvent.emit(
+                        ProfileUiEvent.ShowMessage(
+                            message ?: "頭像上傳失敗，請稍後再試。",
+                        ),
+                    )
+                }
         }
     }
 }
