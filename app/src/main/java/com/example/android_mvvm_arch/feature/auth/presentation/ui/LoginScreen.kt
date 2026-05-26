@@ -32,7 +32,7 @@ import com.example.android_mvvm_arch.feature.auth.presentation.viewmodel.LoginVi
 
 @Composable
 fun LoginScreen(
-    onNavigateToProfile: () -> Unit,
+    onNavigateToHome: () -> Unit,
     onNavigateToRegister: () -> Unit,
     onNavigateToForgotPassword: () -> Unit,
     viewModel: LoginViewModel = hiltViewModel(),
@@ -42,7 +42,7 @@ fun LoginScreen(
     LaunchedEffect(Unit) {
         viewModel.uiEvent.collect { event ->
             when (event) {
-                LoginUiEvent.NavigateToProfile -> onNavigateToProfile()
+                LoginUiEvent.NavigateToHome -> onNavigateToHome()
                 is LoginUiEvent.ShowMessage -> Unit
             }
         }

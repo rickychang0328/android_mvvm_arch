@@ -9,6 +9,7 @@ import com.example.android_mvvm_arch.feature.auth.presentation.ui.ForgotPassword
 import com.example.android_mvvm_arch.feature.auth.presentation.ui.LoginScreen
 import com.example.android_mvvm_arch.feature.auth.presentation.ui.RegisterScreen
 import com.example.android_mvvm_arch.feature.auth.presentation.ui.ResetPasswordScreen
+import com.example.android_mvvm_arch.feature.home.presentation.ui.HomeScreen
 import com.example.android_mvvm_arch.feature.notifications.presentation.ui.NotificationsScreen
 import com.example.android_mvvm_arch.feature.profile.presentation.ui.ProfileScreen
 import com.example.android_mvvm_arch.feature.settings.presentation.ui.SettingsScreen
@@ -24,8 +25,8 @@ fun AppNavGraph(
     ) {
         composable(Routes.LOGIN) {
             LoginScreen(
-                onNavigateToProfile = {
-                    navController.navigate(Routes.PROFILE) {
+                onNavigateToHome = {
+                    navController.navigate(Routes.HOME) {
                         popUpTo(Routes.LOGIN) { inclusive = true }
                     }
                 },
@@ -39,8 +40,8 @@ fun AppNavGraph(
         }
         composable(Routes.REGISTER) {
             RegisterScreen(
-                onNavigateToProfile = {
-                    navController.navigate(Routes.PROFILE) {
+                onNavigateToHome = {
+                    navController.navigate(Routes.HOME) {
                         popUpTo(0) { inclusive = true }
                     }
                 },
@@ -66,11 +67,18 @@ fun AppNavGraph(
                 },
             )
         }
+        composable(Routes.HOME) {
+            HomeScreen(
+                onNavigateToRoute = { route ->
+                    navController.navigate(route)
+                }
+            )
+        }
         composable(Routes.PROFILE) {
             ProfileScreen(
                 onNavigateToLogin = {
                     navController.navigate(Routes.LOGIN) {
-                        popUpTo(Routes.PROFILE) { inclusive = true }
+                        popUpTo(0) { inclusive = true }
                     }
                 },
                 onNavigateToSettings = {
@@ -79,6 +87,7 @@ fun AppNavGraph(
                 onNavigateToNotifications = {
                     navController.navigate(Routes.NOTIFICATIONS)
                 },
+                onNavigateBack = { navController.popBackStack() },
             )
         }
         composable(Routes.SETTINGS) {

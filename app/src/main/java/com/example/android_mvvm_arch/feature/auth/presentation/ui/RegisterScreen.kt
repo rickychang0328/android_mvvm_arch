@@ -32,7 +32,7 @@ import com.example.android_mvvm_arch.feature.auth.presentation.viewmodel.Registe
 
 @Composable
 fun RegisterScreen(
-    onNavigateToProfile: () -> Unit,
+    onNavigateToHome: () -> Unit,
     onNavigateToLogin: () -> Unit,
     viewModel: RegisterViewModel = hiltViewModel(),
 ) {
@@ -41,7 +41,7 @@ fun RegisterScreen(
     LaunchedEffect(Unit) {
         viewModel.uiEvent.collect { event ->
             when (event) {
-                RegisterUiEvent.NavigateToProfile -> onNavigateToProfile()
+                RegisterUiEvent.NavigateToHome -> onNavigateToHome()
                 is RegisterUiEvent.ShowMessage -> Unit
             }
         }

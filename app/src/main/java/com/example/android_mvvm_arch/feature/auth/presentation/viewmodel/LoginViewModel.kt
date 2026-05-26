@@ -50,7 +50,7 @@ class LoginViewModel @Inject constructor(
             loginUseCase(state.email, state.password)
                 .onSuccess {
                     _uiState.update { it.copy(isLoading = false) }
-                    _uiEvent.emit(LoginUiEvent.NavigateToProfile)
+                    _uiEvent.emit(LoginUiEvent.NavigateToHome)
                 }
                 .onFailure { error ->
                     val message = when (error) {

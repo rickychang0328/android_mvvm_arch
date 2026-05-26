@@ -24,7 +24,7 @@ class MainViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            val destination = if (isLoggedInUseCase()) Routes.PROFILE else Routes.LOGIN
+            val destination = if (isLoggedInUseCase()) Routes.HOME else Routes.LOGIN
             _startDestination.value = destination
         }
         viewModelScope.launch {

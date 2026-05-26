@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Badge
@@ -23,7 +24,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -42,6 +45,7 @@ fun ProfileScreen(
     onNavigateToLogin: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToNotifications: () -> Unit,
+    onNavigateBack: () -> Unit,
     viewModel: ProfileViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -54,132 +58,137 @@ fun ProfileScreen(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(24.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = "個人資料",
-                style = MaterialTheme.typography.headlineMedium,
-            )
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onNavigateToNotifications) {
-                    BadgedBox(
-                        badge = {
-                            if (uiState.unreadNotificationsCount > 0) {
-                                Badge {
-                                    Text(text = uiState.unreadNotificationsCount.toString())
-                                }
-                            }
-                        },
-                    ) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("個人資料") },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
                         Icon(
-                            imageVector = Icons.Default.Notifications,
-                            contentDescription = "通知",
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "返回"
+                        )
+                    }
+                },
+                actions = {
+                    IconButton(onClick = onNavigateToNotifications) {
+                        BadgedBox(
+                            badge = {
+                                if (uiState.unreadNotificationsCount > 0) {
+                                    Badge {
+                                        Text(text = uiState.unreadNotificationsCount.toString())
+                                    }
+                                }
+                            },
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Notifications,
+                                contentDescription = "通知",
+                            )
+                        }
+                    }
+                    IconButton(onClick = onNavigateToSettings) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "設定",
                         )
                     }
                 }
-                IconButton(onClick = onNavigateToSettings) {
-                    Icon(
-                        imageVector = Icons.Default.Settings,
-                        contentDescription = "設定",
-                    )
-                }
-            }
+            )
         }
-        Spacer(modifier = Modifier.height(16.dp))
-
-        if (uiState.isLoading && uiState.profile == null) {
-            CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
-        } else {
-            uiState.profile?.email?.let { email ->
-                Text(
-                    text = "Email: $email",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-            }
-
-            if (uiState.isEditing) {
-                OutlinedTextField(
-                    value = uiState.displayName,
-                    onValueChange = { viewModel.onIntent(ProfileIntent.DisplayNameChanged(it)) },
-                    label = { Text("顯示名稱") },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !uiState.isSaving,
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = uiState.phone,
-                    onValueChange = { viewModel.onIntent(ProfileIntent.PhoneChanged(it)) },
-                    label = { Text("電話") },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !uiState.isSaving,
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = uiState.bio,
-                    onValueChange = { viewModel.onIntent(ProfileIntent.BioChanged(it)) },
-                    label = { Text("簡介") },
-                    modifier = Modifier.fillMaxWidth(),
-                    minLines = 3,
-                    enabled = !uiState.isSaving,
-                )
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .verticalScroll(rememberScrollState())
+                .padding(24.dp),
+        ) {
+            if (uiState.isLoading && uiState.profile == null) {
+                CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
             } else {
-                ProfileReadOnlyRow(label = "顯示名稱", value = uiState.profile?.displayName)
-                ProfileReadOnlyRow(label = "電話", value = uiState.profile?.phone)
-                ProfileReadOnlyRow(label = "簡介", value = uiState.profile?.bio)
-            }
+                uiState.profile?.email?.let { email ->
+                    Text(
+                        text = "Email: $email",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
 
-            uiState.errorMessage?.let { error ->
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(text = error, color = MaterialTheme.colorScheme.error)
-            }
-            uiState.successMessage?.let { success ->
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(text = success, color = MaterialTheme.colorScheme.primary)
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
                 if (uiState.isEditing) {
-                    OutlinedButton(
-                        onClick = { viewModel.onIntent(ProfileIntent.CancelEditing) },
-                        modifier = Modifier.weight(1f),
+                    OutlinedTextField(
+                        value = uiState.displayName,
+                        onValueChange = { viewModel.onIntent(ProfileIntent.DisplayNameChanged(it)) },
+                        label = { Text("顯示名稱") },
+                        modifier = Modifier.fillMaxWidth(),
                         enabled = !uiState.isSaving,
-                    ) {
-                        Text("取消")
-                    }
-                    Button(
-                        onClick = { viewModel.onIntent(ProfileIntent.SaveProfile) },
-                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = uiState.phone,
+                        onValueChange = { viewModel.onIntent(ProfileIntent.PhoneChanged(it)) },
+                        label = { Text("電話") },
+                        modifier = Modifier.fillMaxWidth(),
                         enabled = !uiState.isSaving,
-                    ) {
-                        Text(if (uiState.isSaving) "儲存中…" else "儲存")
-                    }
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = uiState.bio,
+                        onValueChange = { viewModel.onIntent(ProfileIntent.BioChanged(it)) },
+                        label = { Text("簡介") },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 3,
+                        enabled = !uiState.isSaving,
+                    )
                 } else {
-                    Button(
-                        onClick = { viewModel.onIntent(ProfileIntent.StartEditing) },
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text("編輯")
-                    }
-                    OutlinedButton(
-                        onClick = { viewModel.onIntent(ProfileIntent.Logout) },
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text("登出")
+                    ProfileReadOnlyRow(label = "顯示名稱", value = uiState.profile?.displayName)
+                    ProfileReadOnlyRow(label = "電話", value = uiState.profile?.phone)
+                    ProfileReadOnlyRow(label = "簡介", value = uiState.profile?.bio)
+                }
+
+                uiState.errorMessage?.let { error ->
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(text = error, color = MaterialTheme.colorScheme.error)
+                }
+                uiState.successMessage?.let { success ->
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(text = success, color = MaterialTheme.colorScheme.primary)
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    if (uiState.isEditing) {
+                        OutlinedButton(
+                            onClick = { viewModel.onIntent(ProfileIntent.CancelEditing) },
+                            modifier = Modifier.weight(1f),
+                            enabled = !uiState.isSaving,
+                        ) {
+                            Text("取消")
+                        }
+                        Button(
+                            onClick = { viewModel.onIntent(ProfileIntent.SaveProfile) },
+                            modifier = Modifier.weight(1f),
+                            enabled = !uiState.isSaving,
+                        ) {
+                            Text(if (uiState.isSaving) "儲存中…" else "儲存")
+                        }
+                    } else {
+                        Button(
+                            onClick = { viewModel.onIntent(ProfileIntent.StartEditing) },
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text("編輯")
+                        }
+                        OutlinedButton(
+                            onClick = { viewModel.onIntent(ProfileIntent.Logout) },
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text("登出")
+                        }
                     }
                 }
             }

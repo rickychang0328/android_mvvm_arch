@@ -61,7 +61,7 @@ class RegisterViewModel @Inject constructor(
             )
                 .onSuccess {
                     _uiState.update { it.copy(isLoading = false) }
-                    _uiEvent.emit(RegisterUiEvent.NavigateToProfile)
+                    _uiEvent.emit(RegisterUiEvent.NavigateToHome)
                 }
                 .onFailure { error ->
                     val message = when (error) {
