@@ -1,5 +1,5 @@
 # 循序圖 (Sequence Diagram)
-# Android MVVM Architecture — Auth & Profile
+# Android MVVM Architecture — Auth, Profile & Settings
 
 > 使用 [Mermaid](https://mermaid.js.org/) 語法繪製，可在 GitHub、GitLab、Markdown 預覽工具中直接渲染。
 
@@ -423,4 +423,118 @@ sequenceDiagram
     end
 
     deactivate Safe
+```
+
+---
+
+## 11. Settings 讀取流程（App 啟動 → DataStore → Theme）
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant MA as MainActivity
+    participant DS as SettingsDataStoreImpl
+    participant Prefs as DataStore Preferences<br/>(app_settings)
+    participant Theme as Android_mvvm_archTheme
+    participant Nav as AppNavGraph
+
+    User->>MA: 啟動 App (onCreate)
+    activate MA
+    MA->>DS: settingsFlow.collectAsStateWithLifecycle()
+    activate DS
+    DS->>Prefs: data.map { preferences }
+    Prefs-->>DS: AppSettings(isDarkMode=false, language="zh-TW", ...)
+    DS-->>MA: Flow emit AppSettings
+    deactivate DS
+
+    MA->>Theme: Android_mvvm_archTheme(darkTheme = appSettings.isDarkMode)
+    activate Theme
+    Theme-->>MA: MaterialTheme 套用 light / dark colorScheme
+    deactivate Theme
+
+    MA->>Nav: AppNavGraph(startDestination)
+    Nav-->>User: 顯示 LoginScreen 或 ProfileScreen
+    deactivate MA
+
+    note over MA,Theme: 設定變更時 settingsFlow 自動 re-emit，<br/>Compose 重組並即時切換主題
+```
+
+---
+
+## 12. Settings 更新流程（User toggle → ViewModel → DataStore → UI）
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant SS as SettingsScreen
+    participant SVM as SettingsViewModel
+    participant UC as UpdateDarkModeUseCase
+    participant Repo as SettingsRepositoryImpl
+    participant DS as SettingsDataStoreImpl
+    participant Prefs as DataStore Preferences
+    participant MA as MainActivity
+    participant Theme as Android_mvvm_archTheme
+
+    User->>SS: 切換「深色模式」Switch
+    SS->>SVM: onIntent(DarkModeChanged(enabled=true))
+    activate SVM
+
+    SVM->>UC: invoke(enabled=true)
+    activate UC
+    UC->>Repo: updateDarkMode(true)
+    activate Repo
+    Repo->>DS: updateDarkMode(true)
+    activate DS
+    DS->>Prefs: edit { IS_DARK_MODE = true }
+    Prefs-->>DS: 寫入完成
+    deactivate DS
+    deactivate Repo
+    UC-->>SVM: Result.success(Unit)
+    deactivate UC
+
+    par SettingsScreen 更新
+        DS->>SVM: settingsFlow emit AppSettings(isDarkMode=true)
+        SVM-->>SS: uiState.isDarkMode = true
+    and MainActivity 主題更新
+        DS->>MA: settingsFlow emit AppSettings(isDarkMode=true)
+        MA->>Theme: Android_mvvm_archTheme(darkTheme=true)
+        Theme-->>User: 全 App 切換為深色主題
+    end
+
+    deactivate SVM
+```
+
+---
+
+## 13. Settings 語言切換（UseCase 驗證）
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant SS as SettingsScreen
+    participant SVM as SettingsViewModel
+    participant UC as UpdateLanguageUseCase
+    participant Repo as SettingsRepositoryImpl
+    participant DS as SettingsDataStoreImpl
+
+    User->>SS: 選擇「English」SegmentedButton
+    SS->>SVM: onIntent(LanguageChanged("en"))
+    activate SVM
+
+    SVM->>UC: invoke("en")
+    activate UC
+    UC->>UC: 驗證 language in {"zh-TW", "en"}
+    UC->>Repo: updateLanguage("en")
+    Repo->>DS: updateLanguage("en")
+    DS->>DS: edit { LANGUAGE = "en" }
+    UC-->>SVM: Result.success(Unit)
+    deactivate UC
+
+    DS-->>SVM: settingsFlow emit AppSettings(language="en")
+    SVM-->>SS: uiState.language = "en"
+    deactivate SVM
+    SS-->>User: SegmentedButton 顯示 English 已選中
 ```

@@ -1,5 +1,5 @@
 # Software Design Document (SDD)
-# Android MVVM Architecture — Auth & Profile Feature
+# Android MVVM Architecture — Auth, Profile & Settings Feature
 
 **專案名稱：** android_mvvm_arch  
 **套件名稱：** `com.example.android_mvvm_arch`  
@@ -25,6 +25,7 @@
 6. [功能模組設計](#6-功能模組設計)
    - 6.1 [Auth 登入功能](#61-auth-登入功能)
    - 6.2 [Profile 個人資料功能](#62-profile-個人資料功能)
+   - 6.3 [Settings 設定功能](#63-settings-設定功能)
 7. [安全設計（DLP）](#7-安全設計dlp)
 8. [錯誤處理策略](#8-錯誤處理策略)
 9. [導航設計](#9-導航設計)
@@ -34,7 +35,7 @@
 
 ## 1. 專案概述
 
-本專案為 Android 行動應用程式，示範以 **Clean Architecture** 搭配 **MVVM + MVI** 風格實作「登入 / 登出」與「個人資料檢視 / 編輯」兩大功能模組。所有網路呼叫透過 `MockApiInterceptor` 於本地模擬，可無需後端即獨立運行。
+本專案為 Android 行動應用程式，示範以 **Clean Architecture** 搭配 **MVVM + MVI** 風格實作「登入 / 登出」、「個人資料檢視 / 編輯」與「應用程式設定（深色模式、語言、通知）」三大功能模組。所有網路呼叫透過 `MockApiInterceptor` 於本地模擬，可無需後端即獨立運行。
 
 ### 核心目標
 
@@ -65,7 +66,8 @@
 ┌──────────────────▼──────────────────────┐
 │              Data Layer                 │
 │  RepositoryImpl · Remote API · Room DAO │
-│  DTOs · Mappers · EncryptedTokenStorage │
+│  DTOs · Mappers · SettingsDataStore     │
+│  EncryptedTokenStorage（Token 專用）     │
 └─────────────────────────────────────────┘
 ```
 
@@ -124,6 +126,18 @@ Data 層實作 Domain 介面，處理網路與本地資料。
 | `AuthRepositoryImpl` | `feature/auth/data/repo` | 實作 AuthRepository |
 | `ProfileRepositoryImpl` | `feature/profile/data/repo` | 實作 ProfileRepository |
 | `EncryptedTokenStorage` | `core/security` | Token 加密儲存（EncryptedSharedPreferences） |
+| `AppSettings` | `core/datastore` | 應用程式設定資料模型 |
+| `SettingsDataStore` | `core/datastore` | DataStore Preferences 存取介面 |
+| `SettingsDataStoreImpl` | `core/datastore` | DataStore 實作（檔名：`app_settings`） |
+| `SettingsRepositoryImpl` | `feature/settings/data/repo` | 委派 SettingsDataStore，實作 Domain 介面 |
+
+#### 本地儲存分工
+
+| 儲存機制 | 用途 | 敏感等級 |
+|----------|------|----------|
+| `EncryptedSharedPreferences`（`EncryptedTokenStorage`） | Access / Refresh Token | 高（加密） |
+| `DataStore Preferences`（`SettingsDataStore`） | 深色模式、語言、通知開關 | 低（非敏感偏好） |
+| Room（`ProfileDao`） | 個人資料離線快取 | 中（PII） |
 
 #### Mapper 職責
 
@@ -173,6 +187,9 @@ Entity─ProfileMapper►  Domain Model
 | `core/util` | `DispatcherProvider` | Coroutine Dispatcher 介面 |
 | `core/util` | `DefaultDispatcherProvider` | 正式 Dispatcher 實作 |
 | `core/database` | `AppDatabase` | Room Database 定義 |
+| `core/datastore` | `AppSettings` | 設定資料 class（isDarkMode, language, notificationsEnabled） |
+| `core/datastore` | `SettingsDataStore` | 設定讀寫 Flow 介面 |
+| `core/datastore` | `SettingsDataStoreImpl` | Preferences DataStore 實作 |
 
 ### 3.5 DI 模組
 
@@ -181,7 +198,8 @@ Entity─ProfileMapper►  Domain Model
 | `AppModule` | `SingletonComponent` | `DispatcherProvider`, `TokenStorage` 綁定 |
 | `NetworkModule` | `SingletonComponent` | `Moshi`, `OkHttpClient`, `Retrofit`, `AuthApi`, `ProfileApi` |
 | `DatabaseModule` | `SingletonComponent` | `AppDatabase`, `ProfileDao` |
-| `RepositoryModule` | `SingletonComponent` | `AuthRepository`, `ProfileRepository` 綁定 |
+| `RepositoryModule` | `SingletonComponent` | `AuthRepository`, `ProfileRepository`, `SettingsRepository` 綁定 |
+| `DataStoreModule` | `SingletonComponent` | `SettingsDataStore` 綁定 |
 
 ---
 
@@ -212,13 +230,18 @@ app/src/main/java/com/example/android_mvvm_arch/
 │   ├── util/
 │   │   ├── DispatcherProvider.kt
 │   │   └── DefaultDispatcherProvider.kt
-│   └── database/
-│       └── AppDatabase.kt
+│   ├── database/
+│   │   └── AppDatabase.kt
+│   └── datastore/
+│       ├── AppSettings.kt
+│       ├── SettingsDataStore.kt
+│       └── SettingsDataStoreImpl.kt
 │
 ├── di/
 │   ├── AppModule.kt
 │   ├── NetworkModule.kt
 │   ├── DatabaseModule.kt
+│   ├── DataStoreModule.kt
 │   └── RepositoryModule.kt
 │
 └── feature/
@@ -256,6 +279,21 @@ app/src/main/java/com/example/android_mvvm_arch/
             │           ProfileIntent.kt
             ├── viewmodel/ ProfileViewModel.kt
             └── ui/     ProfileScreen.kt
+    │
+    └── settings/
+        ├── domain/
+        │   ├── repo/   SettingsRepository.kt
+        │   └── usecase/ GetAppSettingsUseCase.kt,
+        │                UpdateDarkModeUseCase.kt,
+        │                UpdateLanguageUseCase.kt,
+        │                UpdateNotificationsUseCase.kt
+        ├── data/
+        │   └── repo/   SettingsRepositoryImpl.kt
+        └── presentation/
+            ├── state/  SettingsUiState.kt, SettingsUiEvent.kt,
+            │           SettingsIntent.kt
+            ├── viewmodel/ SettingsViewModel.kt
+            └── ui/     SettingsScreen.kt
 ```
 
 ---
@@ -278,7 +316,7 @@ app/src/main/java/com/example/android_mvvm_arch/
 | **網路** | OkHttp | 4.12.0 |
 | **序列化** | Moshi + Kotlin Codegen | 1.15.2 |
 | **本地儲存** | Room | 2.7.0 |
-| **本地儲存** | DataStore Preferences | 1.1.1 |
+| **本地儲存** | DataStore Preferences | 1.1.1（已整合 Settings） |
 | **安全** | Security Crypto | 1.1.0-alpha06 |
 | **ViewModel** | Lifecycle | 2.8.7 |
 | **單元測試** | JUnit 5 (Jupiter) | 5.11.4 |
@@ -383,6 +421,72 @@ ProfileDao.observeProfile()               ← Room Flow
 | displayName | ≤ 50 字 | "Display name must be 50 characters or less." |
 | bio | ≤ 200 字 | "Bio must be 200 characters or less." |
 
+### 6.3 Settings 設定功能
+
+#### 使用者故事
+
+> 登入後使用者可從個人資料頁進入設定頁，切換深色模式、選擇語言（繁體中文 / English）、開關通知，並可從設定頁登出。
+
+#### 狀態定義
+
+```kotlin
+data class SettingsUiState(
+    val isDarkMode: Boolean = false,
+    val language: String = "zh-TW",
+    val notificationsEnabled: Boolean = true,
+    val errorMessage: String? = null,
+)
+
+sealed interface SettingsUiEvent {
+    data object NavigateBack : SettingsUiEvent
+    data object NavigateToLogin : SettingsUiEvent
+}
+
+sealed interface SettingsIntent {
+    data class DarkModeChanged(val enabled: Boolean) : SettingsIntent
+    data class LanguageChanged(val language: String) : SettingsIntent
+    data class NotificationsChanged(val enabled: Boolean) : SettingsIntent
+    data object Logout : SettingsIntent
+}
+```
+
+#### DataStore 資料模型
+
+```kotlin
+data class AppSettings(
+    val isDarkMode: Boolean = false,
+    val language: String = "zh-TW",
+    val notificationsEnabled: Boolean = true,
+)
+```
+
+Preferences Keys：`IS_DARK_MODE`、`LANGUAGE`、`NOTIFICATIONS_ENABLED`（檔名 `app_settings`）
+
+#### 資料流
+
+```
+SettingsScreen
+  └─► SettingsViewModel.onIntent()
+        └─► Update*UseCase（語言驗證在 UseCase 層）
+              └─► SettingsRepositoryImpl
+                    └─► SettingsDataStoreImpl.edit { }
+                          └─► settingsFlow 自動 emit 新值
+                                ├─► SettingsViewModel._uiState 更新
+                                └─► MainActivity 訂閱 → Android_mvvm_archTheme(darkTheme)
+```
+
+#### 輸入驗證規則（UpdateLanguageUseCase）
+
+| 欄位 | 規則 | 錯誤訊息 |
+|------|------|---------|
+| language | 僅允許 `"zh-TW"` 或 `"en"` | "Unsupported language. Allowed values: zh-TW, en." |
+
+#### 深色模式整合
+
+- `MainActivity` 注入 `SettingsDataStore`，以 `collectAsStateWithLifecycle` 訂閱 `settingsFlow`
+- 將 `appSettings.isDarkMode` 傳入 `Android_mvvm_archTheme(darkTheme = ...)`
+- 設定頁切換深色模式後，全 App 主題即時更新，無需重啟
+
 ---
 
 ## 7. 安全設計（DLP）
@@ -451,8 +555,12 @@ onFailure { error ->
 ### 路由定義
 
 ```
-Routes.LOGIN   = "login"
-Routes.PROFILE = "profile"
+Routes.LOGIN           = "login"
+Routes.REGISTER        = "register"
+Routes.FORGOT_PASSWORD = "forgot_password"
+Routes.RESET_PASSWORD  = "reset_password"
+Routes.PROFILE         = "profile"
+Routes.SETTINGS        = "settings"
 ```
 
 ### 啟動路由決策（MainViewModel）
@@ -470,8 +578,14 @@ App 啟動
 LoginScreen ─── 登入成功 ──► ProfileScreen
                               (popUpTo login, inclusive=true)
 
-ProfileScreen ─ 登出 ──────► LoginScreen
-                              (popUpTo profile, inclusive=true)
+ProfileScreen ─ 設定按鈕 ──► SettingsScreen
+                              (push)
+
+SettingsScreen ─ 返回 ──────► ProfileScreen
+                              (popBackStack)
+
+ProfileScreen / SettingsScreen ─ 登出 ──► LoginScreen
+                              (popUpTo root, inclusive=true)
 ```
 
 ### 底層實作

@@ -1,5 +1,5 @@
 # 類別圖 (Class Diagram)
-# Android MVVM Architecture — Auth & Profile
+# Android MVVM Architecture — Auth, Profile & Settings
 
 > 使用 [Mermaid](https://mermaid.js.org/) 語法繪製，可在 GitHub、GitLab、Markdown 預覽工具中直接渲染。
 
@@ -79,6 +79,40 @@ classDiagram
             -profileRepository: ProfileRepository
             -dispatcherProvider: DispatcherProvider
             +invoke(displayName: String, phone: String, bio: String) Result~UserProfile~
+        }
+    }
+
+    namespace DomainSettings {
+        class AppSettings {
+            +isDarkMode: Boolean
+            +language: String
+            +notificationsEnabled: Boolean
+        }
+        class SettingsRepository {
+            <<interface>>
+            +settingsFlow: Flow~AppSettings~
+            +updateDarkMode(enabled: Boolean)
+            +updateLanguage(language: String)
+            +updateNotificationsEnabled(enabled: Boolean)
+        }
+        class GetAppSettingsUseCase {
+            -settingsRepository: SettingsRepository
+            +invoke() Flow~AppSettings~
+        }
+        class UpdateDarkModeUseCase {
+            -settingsRepository: SettingsRepository
+            -dispatcherProvider: DispatcherProvider
+            +invoke(enabled: Boolean) Result~Unit~
+        }
+        class UpdateLanguageUseCase {
+            -settingsRepository: SettingsRepository
+            -dispatcherProvider: DispatcherProvider
+            +invoke(language: String) Result~Unit~
+        }
+        class UpdateNotificationsUseCase {
+            -settingsRepository: SettingsRepository
+            -dispatcherProvider: DispatcherProvider
+            +invoke(enabled: Boolean) Result~Unit~
         }
     }
 
@@ -174,6 +208,30 @@ classDiagram
         }
     }
 
+    namespace DataSettings {
+        class SettingsDataStore {
+            <<interface>>
+            +settingsFlow: Flow~AppSettings~
+            +updateDarkMode(enabled: Boolean)
+            +updateLanguage(language: String)
+            +updateNotificationsEnabled(enabled: Boolean)
+        }
+        class SettingsDataStoreImpl {
+            -dataStore: DataStore~Preferences~
+            +settingsFlow: Flow~AppSettings~
+            +updateDarkMode(enabled: Boolean)
+            +updateLanguage(language: String)
+            +updateNotificationsEnabled(enabled: Boolean)
+        }
+        class SettingsRepositoryImpl {
+            -settingsDataStore: SettingsDataStore
+            +settingsFlow: Flow~AppSettings~
+            +updateDarkMode(enabled: Boolean)
+            +updateLanguage(language: String)
+            +updateNotificationsEnabled(enabled: Boolean)
+        }
+    }
+
     %% ─────────── Core Layer ───────────
     namespace Core {
         class TokenStorage {
@@ -208,6 +266,19 @@ classDiagram
         }
         class MockApiInterceptor {
             +intercept(chain: Chain) Response
+        }
+        class SettingsDataStore {
+            <<interface>>
+            +settingsFlow: Flow~AppSettings~
+        }
+        class SettingsDataStoreImpl {
+            -dataStore: DataStore~Preferences~
+            +settingsFlow: Flow~AppSettings~
+        }
+        class AppSettings {
+            +isDarkMode: Boolean
+            +language: String
+            +notificationsEnabled: Boolean
         }
     }
 
@@ -275,6 +346,50 @@ classDiagram
         }
     }
 
+    namespace PresentationSettings {
+        class SettingsUiState {
+            +isDarkMode: Boolean
+            +language: String
+            +notificationsEnabled: Boolean
+            +errorMessage: String?
+        }
+        class SettingsUiEvent {
+            <<sealed interface>>
+            NavigateBack
+            NavigateToLogin
+        }
+        class SettingsIntent {
+            <<sealed interface>>
+            DarkModeChanged
+            LanguageChanged
+            NotificationsChanged
+            Logout
+        }
+        class SettingsViewModel {
+            -getAppSettingsUseCase: GetAppSettingsUseCase
+            -updateDarkModeUseCase: UpdateDarkModeUseCase
+            -updateLanguageUseCase: UpdateLanguageUseCase
+            -updateNotificationsUseCase: UpdateNotificationsUseCase
+            -logoutUseCase: LogoutUseCase
+            +uiState: StateFlow~SettingsUiState~
+            +uiEvent: SharedFlow~SettingsUiEvent~
+            +onIntent(intent: SettingsIntent)
+        }
+        class SettingsScreen {
+            +onNavigateBack()
+            +onNavigateToLogin()
+            observes: SettingsUiState
+            sends: SettingsIntent
+        }
+        class MainActivity {
+            -settingsDataStore: SettingsDataStore
+            +onCreate()
+        }
+        class Android_mvvm_archTheme {
+            +darkTheme: Boolean
+        }
+    }
+
     %% ─────────── 依賴關係 ───────────
 
     %% Domain 使用案例依賴
@@ -288,10 +403,19 @@ classDiagram
     GetUserProfileUseCase --> DispatcherProvider
     UpdateUserProfileUseCase --> ProfileRepository
     UpdateUserProfileUseCase --> DispatcherProvider
+    GetAppSettingsUseCase --> SettingsRepository
+    UpdateDarkModeUseCase --> SettingsRepository
+    UpdateDarkModeUseCase --> DispatcherProvider
+    UpdateLanguageUseCase --> SettingsRepository
+    UpdateLanguageUseCase --> DispatcherProvider
+    UpdateNotificationsUseCase --> SettingsRepository
+    UpdateNotificationsUseCase --> DispatcherProvider
 
     %% Data 實作 Domain 介面
     AuthRepositoryImpl ..|> AuthRepository
     ProfileRepositoryImpl ..|> ProfileRepository
+    SettingsRepositoryImpl ..|> SettingsRepository
+    SettingsDataStoreImpl ..|> SettingsDataStore
     EncryptedTokenStorage ..|> TokenStorage
 
     %% Data 層內部依賴
@@ -311,18 +435,26 @@ classDiagram
     ProfileMapper --> UserProfile
     ProfileMapper --> ProfileUpdate
     ProfileMapper --> UpdateProfileRequestDto
+    SettingsRepositoryImpl --> SettingsDataStore
+    SettingsDataStoreImpl --> AppSettings
 
     %% Presentation 依賴 Domain Use Cases
     LoginViewModel --> LoginUseCase
     ProfileViewModel --> GetUserProfileUseCase
     ProfileViewModel --> UpdateUserProfileUseCase
     ProfileViewModel --> LogoutUseCase
+    SettingsViewModel --> GetAppSettingsUseCase
+    SettingsViewModel --> UpdateDarkModeUseCase
+    SettingsViewModel --> UpdateLanguageUseCase
+    SettingsViewModel --> UpdateNotificationsUseCase
+    SettingsViewModel --> LogoutUseCase
 
-    %% State 關聯
-    LoginViewModel --> LoginUiState
-    LoginViewModel --> LoginUiEvent
-    ProfileViewModel --> ProfileUiState
-    ProfileViewModel --> ProfileUiEvent
+    %% Theme 整合
+    MainActivity --> SettingsDataStore : settingsFlow
+    MainActivity --> Android_mvvm_archTheme : darkTheme
+    SettingsScreen --> SettingsViewModel : onIntent()
+    SettingsViewModel --> SettingsUiState
+    SettingsViewModel --> SettingsUiEvent
 ```
 
 ---
@@ -459,11 +591,89 @@ classDiagram
     ProfileRepositoryImpl --> ProfileApi : Retrofit
     ProfileRepositoryImpl --> ProfileDao : Room
     ProfileRepositoryImpl --> ProfileMapper : convert
+    LoginViewModel --> LoginUiState
+    LoginViewModel --> LoginUiEvent
+    ProfileViewModel --> ProfileUiState
+    ProfileViewModel --> ProfileUiEvent
 ```
 
 ---
 
-## 4. Core 安全模組類別圖
+## 4. Settings 功能類別圖（簡化版）
+
+```mermaid
+classDiagram
+    direction LR
+
+    class SettingsScreen {
+        +onNavigateBack()
+        +onNavigateToLogin()
+        observes: SettingsUiState
+        sends: SettingsIntent
+    }
+
+    class SettingsViewModel {
+        +uiState: StateFlow~SettingsUiState~
+        +uiEvent: SharedFlow~SettingsUiEvent~
+        +onIntent(SettingsIntent)
+    }
+
+    class GetAppSettingsUseCase {
+        +invoke() Flow~AppSettings~
+    }
+
+    class UpdateDarkModeUseCase {
+        +invoke(enabled) Result~Unit~
+    }
+
+    class UpdateLanguageUseCase {
+        +invoke(language) Result~Unit~
+    }
+
+    class SettingsRepository {
+        <<interface>>
+        +settingsFlow: Flow~AppSettings~
+        +updateDarkMode(Boolean)
+        +updateLanguage(String)
+    }
+
+    class SettingsRepositoryImpl {
+        +settingsFlow: Flow~AppSettings~
+    }
+
+    class SettingsDataStore {
+        <<interface>>
+        +settingsFlow: Flow~AppSettings~
+    }
+
+    class SettingsDataStoreImpl {
+        +settingsFlow: Flow~AppSettings~
+    }
+
+    class MainActivity {
+        -settingsDataStore: SettingsDataStore
+    }
+
+    class Android_mvvm_archTheme {
+        +darkTheme: Boolean
+    }
+
+    SettingsScreen --> SettingsViewModel : onIntent()
+    SettingsViewModel --> GetAppSettingsUseCase : observe
+    SettingsViewModel --> UpdateDarkModeUseCase : invoke()
+    SettingsViewModel --> UpdateLanguageUseCase : invoke()
+    GetAppSettingsUseCase --> SettingsRepository
+    UpdateDarkModeUseCase --> SettingsRepository
+    SettingsRepositoryImpl ..|> SettingsRepository
+    SettingsRepositoryImpl --> SettingsDataStore
+    SettingsDataStoreImpl ..|> SettingsDataStore
+    MainActivity --> SettingsDataStore : settingsFlow
+    MainActivity --> Android_mvvm_archTheme : isDarkMode
+```
+
+---
+
+## 5. Core 安全模組類別圖
 
 ```mermaid
 classDiagram
@@ -513,7 +723,7 @@ classDiagram
 
 ---
 
-## 5. DI 模組依賴關係圖
+## 6. DI 模組依賴關係圖
 
 ```mermaid
 classDiagram
@@ -540,10 +750,16 @@ classDiagram
         +provideProfileDao() ProfileDao
     }
 
+    class DataStoreModule {
+        <<HiltModule>>
+        +bindSettingsDataStore() SettingsDataStore
+    }
+
     class RepositoryModule {
         <<HiltModule>>
         +bindAuthRepository() AuthRepository
         +bindProfileRepository() ProfileRepository
+        +bindSettingsRepository() SettingsRepository
     }
 
     class AppDatabase {
@@ -556,6 +772,8 @@ classDiagram
     NetworkModule --> ProfileApi : provides
     DatabaseModule --> AppDatabase : provides
     DatabaseModule --> ProfileDao : provides
+    DataStoreModule --> SettingsDataStore : binds
     RepositoryModule --> AuthRepository : binds
     RepositoryModule --> ProfileRepository : binds
+    RepositoryModule --> SettingsRepository : binds
 ```

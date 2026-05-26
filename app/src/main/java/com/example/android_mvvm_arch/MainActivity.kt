@@ -16,18 +16,29 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.android_mvvm_arch.core.datastore.AppSettings
+import com.example.android_mvvm_arch.core.datastore.SettingsDataStore
 import com.example.android_mvvm_arch.navigation.AppNavGraph
 import com.example.android_mvvm_arch.presentation.MainViewModel
 import com.example.android_mvvm_arch.ui.theme.Android_mvvm_archTheme
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+
+    @Inject
+    lateinit var settingsDataStore: SettingsDataStore
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            Android_mvvm_archTheme {
+            val appSettings by settingsDataStore.settingsFlow.collectAsStateWithLifecycle(
+                initialValue = AppSettings(),
+            )
+
+            Android_mvvm_archTheme(darkTheme = appSettings.isDarkMode) {
                 val mainViewModel: MainViewModel = hiltViewModel()
                 val startDestination by mainViewModel.startDestination.collectAsStateWithLifecycle()
 

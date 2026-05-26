@@ -10,7 +10,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -31,6 +35,7 @@ import com.example.android_mvvm_arch.feature.profile.presentation.viewmodel.Prof
 @Composable
 fun ProfileScreen(
     onNavigateToLogin: () -> Unit,
+    onNavigateToSettings: () -> Unit,
     viewModel: ProfileViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -49,10 +54,22 @@ fun ProfileScreen(
             .verticalScroll(rememberScrollState())
             .padding(24.dp),
     ) {
-        Text(
-            text = "個人資料",
-            style = MaterialTheme.typography.headlineMedium,
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "個人資料",
+                style = MaterialTheme.typography.headlineMedium,
+            )
+            IconButton(onClick = onNavigateToSettings) {
+                Icon(
+                    imageVector = Icons.Default.Settings,
+                    contentDescription = "設定",
+                )
+            }
+        }
         Spacer(modifier = Modifier.height(16.dp))
 
         if (uiState.isLoading && uiState.profile == null) {

@@ -10,6 +10,7 @@ import com.example.android_mvvm_arch.feature.auth.presentation.ui.LoginScreen
 import com.example.android_mvvm_arch.feature.auth.presentation.ui.RegisterScreen
 import com.example.android_mvvm_arch.feature.auth.presentation.ui.ResetPasswordScreen
 import com.example.android_mvvm_arch.feature.profile.presentation.ui.ProfileScreen
+import com.example.android_mvvm_arch.feature.settings.presentation.ui.SettingsScreen
 
 @Composable
 fun AppNavGraph(
@@ -69,6 +70,19 @@ fun AppNavGraph(
                 onNavigateToLogin = {
                     navController.navigate(Routes.LOGIN) {
                         popUpTo(Routes.PROFILE) { inclusive = true }
+                    }
+                },
+                onNavigateToSettings = {
+                    navController.navigate(Routes.SETTINGS)
+                },
+            )
+        }
+        composable(Routes.SETTINGS) {
+            SettingsScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToLogin = {
+                    navController.navigate(Routes.LOGIN) {
+                        popUpTo(0) { inclusive = true }
                     }
                 },
             )
