@@ -5,6 +5,7 @@ import com.example.android_mvvm_arch.core.network.AuthInterceptor
 import com.example.android_mvvm_arch.core.network.MockApiInterceptor
 import com.example.android_mvvm_arch.core.network.TokenRefreshAuthenticator
 import com.example.android_mvvm_arch.feature.auth.data.remote.AuthApi
+import com.example.android_mvvm_arch.feature.notifications.data.remote.NotificationsApi
 import com.example.android_mvvm_arch.feature.profile.data.remote.ProfileApi
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
@@ -66,4 +67,9 @@ object NetworkModule {
     @Provides
     @Singleton
     fun provideProfileApi(retrofit: Retrofit): ProfileApi = retrofit.create(ProfileApi::class.java)
+
+    @Provides
+    @Singleton
+    fun provideNotificationsApi(retrofit: Retrofit): NotificationsApi =
+        retrofit.create(NotificationsApi::class.java)
 }

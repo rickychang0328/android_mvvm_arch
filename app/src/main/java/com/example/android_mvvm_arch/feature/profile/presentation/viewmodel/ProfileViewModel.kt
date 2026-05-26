@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.android_mvvm_arch.core.network.ApiException
 import com.example.android_mvvm_arch.feature.auth.domain.usecase.LogoutUseCase
+import com.example.android_mvvm_arch.feature.notifications.domain.usecase.GetUnreadCountUseCase
 import com.example.android_mvvm_arch.feature.profile.domain.usecase.GetUserProfileUseCase
 import com.example.android_mvvm_arch.feature.profile.domain.usecase.UpdateUserProfileUseCase
 import com.example.android_mvvm_arch.feature.profile.presentation.state.ProfileIntent
@@ -25,6 +26,7 @@ class ProfileViewModel @Inject constructor(
     private val getUserProfileUseCase: GetUserProfileUseCase,
     private val updateUserProfileUseCase: UpdateUserProfileUseCase,
     private val logoutUseCase: LogoutUseCase,
+    private val getUnreadCountUseCase: GetUnreadCountUseCase,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ProfileUiState())
@@ -48,6 +50,11 @@ class ProfileViewModel @Inject constructor(
                         )
                     }
                 }
+            }
+        }
+        viewModelScope.launch {
+            getUnreadCountUseCase().collect { count ->
+                _uiState.update { it.copy(unreadNotificationsCount = count) }
             }
         }
         refreshProfile()

@@ -1,5 +1,5 @@
 # 類別圖 (Class Diagram)
-# Android MVVM Architecture — Auth, Profile & Settings
+# Android MVVM Architecture — Auth, Profile, Settings & Notifications
 
 > 使用 [Mermaid](https://mermaid.js.org/) 語法繪製，可在 GitHub、GitLab、Markdown 預覽工具中直接渲染。
 
@@ -885,10 +885,228 @@ classDiagram
     AppModule --> TokenStorage : binds
     NetworkModule --> AuthApi : provides
     NetworkModule --> ProfileApi : provides
+    NetworkModule --> NotificationsApi : provides
     DatabaseModule --> AppDatabase : provides
     DatabaseModule --> ProfileDao : provides
+    DatabaseModule --> NotificationDao : provides
     DataStoreModule --> SettingsDataStore : binds
     RepositoryModule --> AuthRepository : binds
     RepositoryModule --> ProfileRepository : binds
     RepositoryModule --> SettingsRepository : binds
+    RepositoryModule --> NotificationsRepository : binds
+```
+
+---
+
+## 7. Notifications 功能類別圖
+
+```mermaid
+classDiagram
+    direction TB
+
+    class Notification {
+        +id: String
+        +title: String
+        +body: String
+        +type: NotificationType
+        +isRead: Boolean
+        +createdAt: Long
+    }
+
+    class NotificationType {
+        <<enum>>
+        SYSTEM
+        PROMOTION
+        ACTIVITY
+        +fromRaw(raw: String?) NotificationType
+    }
+
+    class NotificationsRepository {
+        <<interface>>
+        +observeNotifications() Flow~List~Notification~~
+        +observeUnreadCount() Flow~Int~
+        +refresh() Result~Unit~
+        +markAsRead(id: String) Result~Unit~
+        +markAllAsRead() Result~Unit~
+        +clearAll()
+    }
+
+    class GetNotificationsUseCase {
+        -notificationsRepository: NotificationsRepository
+        +invoke() Flow~List~Notification~~
+    }
+
+    class RefreshNotificationsUseCase {
+        -notificationsRepository: NotificationsRepository
+        -dispatcherProvider: DispatcherProvider
+        +invoke() Result~Unit~
+    }
+
+    class MarkNotificationReadUseCase {
+        -notificationsRepository: NotificationsRepository
+        -dispatcherProvider: DispatcherProvider
+        +invoke(id: String) Result~Unit~
+    }
+
+    class MarkAllNotificationsReadUseCase {
+        -notificationsRepository: NotificationsRepository
+        -dispatcherProvider: DispatcherProvider
+        +invoke() Result~Unit~
+    }
+
+    class GetUnreadCountUseCase {
+        -notificationsRepository: NotificationsRepository
+        +invoke() Flow~Int~
+    }
+
+    class NotificationEntity {
+        <<Entity>>
+        +id: String
+        +title: String
+        +body: String
+        +type: String
+        +isRead: Boolean
+        +createdAt: Long
+    }
+
+    class NotificationDao {
+        <<interface>>
+        +observeAll() Flow~List~NotificationEntity~~
+        +observeUnreadCount() Flow~Int~
+        +upsertAll(items: List~NotificationEntity~)
+        +markAsRead(id: String)
+        +markAllAsRead()
+        +clearAll()
+    }
+
+    class NotificationsApi {
+        <<interface>>
+        +getNotifications() NotificationsResponseDto
+        +markAsRead(id: String)
+        +markAllAsRead()
+    }
+
+    class NotificationDto {
+        +id: String
+        +title: String
+        +body: String
+        +type: String
+        +isRead: Boolean
+        +createdAt: Long
+    }
+
+    class NotificationsResponseDto {
+        +items: List~NotificationDto~
+    }
+
+    class NotificationMapper {
+        +toEntity(dto: NotificationDto) NotificationEntity
+        +toDomain(entity: NotificationEntity) Notification
+        +toDomain(dto: NotificationDto) Notification
+    }
+
+    class NotificationsRepositoryImpl {
+        -notificationsApi: NotificationsApi
+        -notificationDao: NotificationDao
+        -notificationMapper: NotificationMapper
+        +observeNotifications() Flow~List~Notification~~
+        +observeUnreadCount() Flow~Int~
+        +refresh() Result~Unit~
+        +markAsRead(id: String) Result~Unit~
+        +markAllAsRead() Result~Unit~
+        +clearAll()
+    }
+
+    class NotificationHelper {
+        -context: Context
+        +createChannel()
+        +showNotification(notification: Notification)
+    }
+
+    class NotificationSyncWorker {
+        <<HiltWorker>>
+        -refreshNotificationsUseCase: RefreshNotificationsUseCase
+        -getNotificationsUseCase: GetNotificationsUseCase
+        -settingsDataStore: SettingsDataStore
+        -notificationHelper: NotificationHelper
+        +doWork() Result
+        +enqueuePeriodic(workManager: WorkManager)$
+    }
+
+    class NotificationsUiState {
+        +isLoading: Boolean
+        +isRefreshing: Boolean
+        +items: List~Notification~
+        +errorMessage: String?
+    }
+
+    class NotificationsUiEvent {
+        <<sealed interface>>
+        ShowError
+        AllMarkedRead
+    }
+
+    class NotificationsIntent {
+        <<sealed interface>>
+        Load
+        Refresh
+        MarkRead
+        MarkAllRead
+        Retry
+    }
+
+    class NotificationsViewModel {
+        -getNotificationsUseCase: GetNotificationsUseCase
+        -refreshNotificationsUseCase: RefreshNotificationsUseCase
+        -markNotificationReadUseCase: MarkNotificationReadUseCase
+        -markAllNotificationsReadUseCase: MarkAllNotificationsReadUseCase
+        +uiState: StateFlow~NotificationsUiState~
+        +uiEvent: SharedFlow~NotificationsUiEvent~
+        +onIntent(intent: NotificationsIntent)
+    }
+
+    class NotificationsScreen {
+        +onNavigateBack()
+        observes: NotificationsUiState
+        sends: NotificationsIntent
+    }
+
+    class AndroidMvvmArchApplication {
+        <<HiltAndroidApp>>
+        -workerFactory: HiltWorkerFactory
+        -notificationHelper: NotificationHelper
+        +workManagerConfiguration: Configuration
+        +onCreate()
+    }
+
+    Notification --> NotificationType
+    NotificationsRepositoryImpl ..|> NotificationsRepository
+    NotificationsRepositoryImpl --> NotificationsApi
+    NotificationsRepositoryImpl --> NotificationDao
+    NotificationsRepositoryImpl --> NotificationMapper
+    NotificationMapper --> NotificationDto
+    NotificationMapper --> NotificationEntity
+    NotificationMapper --> Notification
+    NotificationsResponseDto --> NotificationDto
+
+    GetNotificationsUseCase --> NotificationsRepository
+    RefreshNotificationsUseCase --> NotificationsRepository
+    MarkNotificationReadUseCase --> NotificationsRepository
+    MarkAllNotificationsReadUseCase --> NotificationsRepository
+    GetUnreadCountUseCase --> NotificationsRepository
+
+    NotificationsViewModel --> GetNotificationsUseCase
+    NotificationsViewModel --> RefreshNotificationsUseCase
+    NotificationsViewModel --> MarkNotificationReadUseCase
+    NotificationsViewModel --> MarkAllNotificationsReadUseCase
+    NotificationsViewModel --> NotificationsUiState
+    NotificationsViewModel --> NotificationsUiEvent
+    NotificationsScreen --> NotificationsViewModel : onIntent()
+
+    NotificationSyncWorker --> RefreshNotificationsUseCase
+    NotificationSyncWorker --> GetNotificationsUseCase
+    NotificationSyncWorker --> NotificationHelper
+    NotificationSyncWorker --> SettingsDataStore : notificationsEnabled
+    AndroidMvvmArchApplication --> NotificationHelper : createChannel
+    AndroidMvvmArchApplication --> NotificationSyncWorker : enqueuePeriodic
 ```

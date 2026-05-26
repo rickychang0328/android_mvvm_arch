@@ -1,4 +1,4 @@
-# API 規格書 — Auth & Profile
+# API 規格書 — Auth, Profile & Notifications
 
 **Base URL:** `https://api.example.com/`  
 **API Version:** `v1`  
@@ -158,7 +158,118 @@ Authorization: Bearer {access_token}
 
 ---
 
-## 5. 錯誤格式（通用）
+## 5. 取得通知列表
+
+### `GET /api/v1/notifications`
+
+回傳目前使用者的通知列表，依 `created_at` 由新到舊排序。
+
+**Headers**
+
+```
+Authorization: Bearer {access_token}
+```
+
+**Response `200 OK`**
+
+```json
+{
+  "items": [
+    {
+      "id": "ntf_001",
+      "title": "歡迎使用本應用",
+      "body": "感謝您下載使用，點擊查看新手導覽。",
+      "type": "SYSTEM",
+      "is_read": false,
+      "created_at": 1748257200000
+    },
+    {
+      "id": "ntf_002",
+      "title": "限時優惠",
+      "body": "升級會員享有 8 折優惠。",
+      "type": "PROMOTION",
+      "is_read": false,
+      "created_at": 1748255400000
+    }
+  ]
+}
+```
+
+| 欄位 | 類型 | 說明 |
+|------|------|------|
+| items | array | 通知陣列 |
+| items[].id | string | 通知唯一識別碼 |
+| items[].title | string | 通知標題 |
+| items[].body | string | 通知內容（純文字） |
+| items[].type | string | 類型，允許 `SYSTEM` / `PROMOTION` / `ACTIVITY`，未知值由 Client Mapper 視為 `SYSTEM` |
+| items[].is_read | boolean | 是否已讀 |
+| items[].created_at | number | epoch millis |
+
+Mock 階段固定回傳 6–7 筆 demo 資料，且 `created_at` 由 `System.currentTimeMillis()` 動態計算。
+
+**Response `401 Unauthorized`**
+
+```json
+{ "error": "unauthorized", "message": "Invalid or expired token." }
+```
+
+---
+
+## 6. 標記單筆通知為已讀
+
+### `PATCH /api/v1/notifications/{id}/read`
+
+**Headers**
+
+```
+Authorization: Bearer {access_token}
+```
+
+**Path 參數**
+
+| 名稱 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| id | string | 是 | 通知識別碼 |
+
+**Response `204 No Content`**
+
+無 Body。Client 在收到 204 後將本地 Room 該筆 `is_read` 更新為 `true`。
+
+**Response `401 Unauthorized`**
+
+```json
+{ "error": "unauthorized", "message": "Invalid or expired token." }
+```
+
+---
+
+## 7. 全部標記為已讀
+
+### `POST /api/v1/notifications/read-all`
+
+**Headers**
+
+```
+Authorization: Bearer {access_token}
+```
+
+**Request Body**
+
+無。
+
+**Response `204 No Content`**
+
+無 Body。Client 將本地所有 `is_read = false` 的紀錄改為 `true`。
+
+**Response `401 Unauthorized`**
+
+```json
+{ "error": "unauthorized", "message": "Invalid or expired token." }
+```
+
+---
+
+## 8. 錯誤格式（通用）
 
 所有非 2xx 回應建議使用統一格式：
 
@@ -180,7 +291,7 @@ Authorization: Bearer {access_token}
 
 ---
 
-## 6. DLP 與安全要求
+## 9. DLP 與安全要求
 
 - 所有 API 必須透過 **HTTPS** 傳輸。
 - **禁止** 在 Log、Crash Report 中記錄 `password`、`access_token`、`refresh_token`。

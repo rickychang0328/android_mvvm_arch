@@ -9,6 +9,7 @@ import com.example.android_mvvm_arch.feature.auth.presentation.ui.ForgotPassword
 import com.example.android_mvvm_arch.feature.auth.presentation.ui.LoginScreen
 import com.example.android_mvvm_arch.feature.auth.presentation.ui.RegisterScreen
 import com.example.android_mvvm_arch.feature.auth.presentation.ui.ResetPasswordScreen
+import com.example.android_mvvm_arch.feature.notifications.presentation.ui.NotificationsScreen
 import com.example.android_mvvm_arch.feature.profile.presentation.ui.ProfileScreen
 import com.example.android_mvvm_arch.feature.settings.presentation.ui.SettingsScreen
 
@@ -75,6 +76,9 @@ fun AppNavGraph(
                 onNavigateToSettings = {
                     navController.navigate(Routes.SETTINGS)
                 },
+                onNavigateToNotifications = {
+                    navController.navigate(Routes.NOTIFICATIONS)
+                },
             )
         }
         composable(Routes.SETTINGS) {
@@ -85,6 +89,11 @@ fun AppNavGraph(
                         popUpTo(0) { inclusive = true }
                     }
                 },
+            )
+        }
+        composable(Routes.NOTIFICATIONS) {
+            NotificationsScreen(
+                onNavigateBack = { navController.popBackStack() },
             )
         }
     }

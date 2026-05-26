@@ -40,6 +40,12 @@ class MockApiInterceptor @Inject constructor() : Interceptor {
                     authHeader = request.header("Authorization"),
                     body = request.body?.let { readBody(it) }.orEmpty(),
                 )
+            method == "GET" && path.endsWith("/api/v1/notifications") ->
+                handleListNotifications(request.header("Authorization"))
+            method == "PATCH" && path.matches(NOTIFICATIONS_READ_REGEX) ->
+                handleMarkNotificationRead(request.header("Authorization"))
+            method == "POST" && path.endsWith("/api/v1/notifications/read-all") ->
+                handleMarkAllNotificationsRead(request.header("Authorization"))
             else -> 404 to """{"error":"not_found","message":"Endpoint not found."}"""
         }
 
@@ -164,6 +170,111 @@ class MockApiInterceptor @Inject constructor() : Interceptor {
         """.trimIndent()
     }
 
+    private fun handleListNotifications(authHeader: String?): Pair<Int, String> {
+        if (!isValidToken(authHeader)) {
+            return 401 to """{"error":"unauthorized","message":"Invalid or expired token."}"""
+        }
+        val now = System.currentTimeMillis()
+        val items = listOf(
+            mockNotification(
+                id = "ntf_001",
+                title = "歡迎使用本應用",
+                body = "感謝您下載使用，點擊查看新手導覽，快速熟悉所有功能。",
+                type = "SYSTEM",
+                isRead = false,
+                createdAt = now - 5 * 60_000L,
+            ),
+            mockNotification(
+                id = "ntf_002",
+                title = "限時優惠",
+                body = "升級會員享有 8 折優惠，並可解鎖進階主題與雲端同步。",
+                type = "PROMOTION",
+                isRead = false,
+                createdAt = now - 35 * 60_000L,
+            ),
+            mockNotification(
+                id = "ntf_003",
+                title = "系統維護通知",
+                body = "本系統將於本週日凌晨 02:00–04:00 進行維護，期間可能無法登入。",
+                type = "SYSTEM",
+                isRead = true,
+                createdAt = now - 3 * 60 * 60_000L,
+            ),
+            mockNotification(
+                id = "ntf_004",
+                title = "新活動上線",
+                body = "週末打卡活動已開放報名，完成任務可獲得限定徽章。",
+                type = "ACTIVITY",
+                isRead = false,
+                createdAt = now - 8 * 60 * 60_000L,
+            ),
+            mockNotification(
+                id = "ntf_005",
+                title = "個人資料同步成功",
+                body = "您的個人資料已自雲端成功同步，最後同步時間已更新。",
+                type = "SYSTEM",
+                isRead = true,
+                createdAt = now - 26 * 60 * 60_000L,
+            ),
+            mockNotification(
+                id = "ntf_006",
+                title = "推薦給您的內容",
+                body = "根據您的偏好，為您挑選了 5 篇精選內容，立即查看。",
+                type = "PROMOTION",
+                isRead = false,
+                createdAt = now - 2 * 24 * 60 * 60_000L,
+            ),
+            mockNotification(
+                id = "ntf_007",
+                title = "週末工作坊",
+                body = "本週六線上工作坊「Compose 實戰」名額有限，報名從速。",
+                type = "ACTIVITY",
+                isRead = true,
+                createdAt = now - 3 * 24 * 60 * 60_000L,
+            ),
+        )
+        val joined = items.joinToString(separator = ",\n")
+        return 200 to """
+            {
+              "items": [
+$joined
+              ]
+            }
+        """.trimIndent()
+    }
+
+    private fun handleMarkNotificationRead(authHeader: String?): Pair<Int, String> {
+        if (!isValidToken(authHeader)) {
+            return 401 to """{"error":"unauthorized","message":"Invalid or expired token."}"""
+        }
+        return 204 to ""
+    }
+
+    private fun handleMarkAllNotificationsRead(authHeader: String?): Pair<Int, String> {
+        if (!isValidToken(authHeader)) {
+            return 401 to """{"error":"unauthorized","message":"Invalid or expired token."}"""
+        }
+        return 204 to ""
+    }
+
+    private fun mockNotification(
+        id: String,
+        title: String,
+        body: String,
+        type: String,
+        isRead: Boolean,
+        createdAt: Long,
+    ): String = """
+        {
+          "id": "$id",
+          "title": "$title",
+          "body": "$body",
+          "type": "$type",
+          "is_read": $isRead,
+          "created_at": $createdAt
+        }
+    """.trimIndent()
+
     private fun isValidToken(authHeader: String?): Boolean {
         val token = authHeader?.removePrefix("Bearer ")?.trim()
         return token == MOCK_ACCESS_TOKEN || token == "${MOCK_ACCESS_TOKEN}_new"
@@ -195,6 +306,8 @@ class MockApiInterceptor @Inject constructor() : Interceptor {
 
     companion object {
         private val JSON_MEDIA_TYPE = "application/json".toMediaType()
+        private val NOTIFICATIONS_READ_REGEX =
+            """^/api/v1/notifications/[^/]+/read$""".toRegex()
         const val DEMO_EMAIL = "demo@example.com"
         const val DEMO_PASSWORD = "password123"
         const val MOCK_ACCESS_TOKEN = "mock_access_token_demo"

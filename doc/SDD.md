@@ -1,5 +1,5 @@
 # Software Design Document (SDD)
-# Android MVVM Architecture — Auth, Profile & Settings Feature
+# Android MVVM Architecture — Auth, Profile, Settings & Notifications Feature
 
 **專案名稱：** android_mvvm_arch  
 **套件名稱：** `com.example.android_mvvm_arch`  
@@ -26,6 +26,7 @@
    - 6.1 [Auth 登入功能](#61-auth-登入功能)
    - 6.2 [Profile 個人資料功能](#62-profile-個人資料功能)
    - 6.3 [Settings 設定功能](#63-settings-設定功能)
+   - 6.4 [Notifications 通知功能](#64-notifications-通知功能)
 7. [安全設計（DLP）](#7-安全設計dlp)
 8. [錯誤處理策略](#8-錯誤處理策略)
 9. [導航設計](#9-導航設計)
@@ -190,16 +191,19 @@ Entity─ProfileMapper►  Domain Model
 | `core/datastore` | `AppSettings` | 設定資料 class（isDarkMode, language, notificationsEnabled, analyticsEnabled, crashReportingEnabled, personalizedAdsEnabled, biometricLoginEnabled） |
 | `core/datastore` | `SettingsDataStore` | 設定讀寫 Flow 介面 |
 | `core/datastore` | `SettingsDataStoreImpl` | Preferences DataStore 實作 |
+| `core/notification` | `NotificationHelper` | 建立 channel、發送系統通知、設定 deep link PendingIntent |
+| `core/notification` | `NotificationSyncWorker` | `@HiltWorker` + `@AssistedInject`，週期 15 分鐘同步通知並彈出系統通知 |
 
 ### 3.5 DI 模組
 
 | 模組 | 安裝範圍 | 提供內容 |
 |------|----------|----------|
 | `AppModule` | `SingletonComponent` | `DispatcherProvider`, `TokenStorage` 綁定 |
-| `NetworkModule` | `SingletonComponent` | `Moshi`, `OkHttpClient`, `Retrofit`, `AuthApi`, `ProfileApi` |
-| `DatabaseModule` | `SingletonComponent` | `AppDatabase`, `ProfileDao` |
-| `RepositoryModule` | `SingletonComponent` | `AuthRepository`, `ProfileRepository`, `SettingsRepository` 綁定 |
+| `NetworkModule` | `SingletonComponent` | `Moshi`, `OkHttpClient`, `Retrofit`, `AuthApi`, `ProfileApi`, `NotificationsApi` |
+| `DatabaseModule` | `SingletonComponent` | `AppDatabase`, `ProfileDao`, `NotificationDao` |
+| `RepositoryModule` | `SingletonComponent` | `AuthRepository`, `ProfileRepository`, `SettingsRepository`, `NotificationsRepository` 綁定 |
 | `DataStoreModule` | `SingletonComponent` | `SettingsDataStore` 綁定 |
+| Hilt 自動產生 | `SingletonComponent` | `HiltWorkerFactory`（注入於 `AndroidMvvmArchApplication.workManagerConfiguration`） |
 
 ---
 
@@ -232,10 +236,13 @@ app/src/main/java/com/example/android_mvvm_arch/
 │   │   └── DefaultDispatcherProvider.kt
 │   ├── database/
 │   │   └── AppDatabase.kt
-│   └── datastore/
-│       ├── AppSettings.kt
-│       ├── SettingsDataStore.kt
-│       └── SettingsDataStoreImpl.kt
+│   ├── datastore/
+│   │   ├── AppSettings.kt
+│   │   ├── SettingsDataStore.kt
+│   │   └── SettingsDataStoreImpl.kt
+│   └── notification/
+│       ├── NotificationHelper.kt
+│       └── NotificationSyncWorker.kt
 │
 ├── di/
 │   ├── AppModule.kt
@@ -299,6 +306,27 @@ app/src/main/java/com/example/android_mvvm_arch/
             │           SettingsIntent.kt
             ├── viewmodel/ SettingsViewModel.kt
             └── ui/     SettingsScreen.kt
+    │
+    └── notifications/
+        ├── domain/
+        │   ├── model/   Notification.kt, NotificationType.kt
+        │   ├── repo/    NotificationsRepository.kt
+        │   └── usecase/ GetNotificationsUseCase.kt,
+        │                 RefreshNotificationsUseCase.kt,
+        │                 MarkNotificationReadUseCase.kt,
+        │                 MarkAllNotificationsReadUseCase.kt,
+        │                 GetUnreadCountUseCase.kt
+        ├── data/
+        │   ├── local/   NotificationEntity.kt, NotificationDao.kt
+        │   ├── remote/  NotificationsApi.kt
+        │   │   └── dto/ NotificationDto.kt, NotificationsResponseDto.kt
+        │   ├── mapper/  NotificationMapper.kt
+        │   └── repo/    NotificationsRepositoryImpl.kt
+        └── presentation/
+            ├── state/   NotificationsUiState.kt, NotificationsUiEvent.kt,
+            │            NotificationsIntent.kt
+            ├── viewmodel/ NotificationsViewModel.kt
+            └── ui/      NotificationsScreen.kt, RelativeTime.kt
 ```
 
 ---
@@ -322,6 +350,8 @@ app/src/main/java/com/example/android_mvvm_arch/
 | **序列化** | Moshi + Kotlin Codegen | 1.15.2 |
 | **本地儲存** | Room | 2.7.0 |
 | **本地儲存** | DataStore Preferences | 1.1.1（已整合 Settings） |
+| **背景排程** | WorkManager (Runtime KTX) | 2.10.0 |
+| **背景排程** | Hilt Work / Hilt Compiler (androidx.hilt) | 1.2.0 |
 | **安全** | Security Crypto | 1.1.0-alpha06 |
 | **ViewModel** | Lifecycle | 2.8.7 |
 | **單元測試** | JUnit 5 (Jupiter) | 5.11.4 |
@@ -556,6 +586,182 @@ sealed interface SettingsUiEvent {
 - 清除快取以 `AlertDialog` 二次確認
 - 成功 / 失敗訊息以 `Snackbar` 呈現（透過 `SnackbarHostState`）
 
+### 6.4 Notifications 通知功能
+
+#### 使用者故事
+
+> 登入後使用者可從個人資料頁 TopAppBar 的鈴鐺圖示（含未讀數量徽章）進入通知列表，瀏覽系統公告、行銷活動與活動提醒，下拉重新整理、單筆/全部標記為已讀；App 在背景每 15 分鐘同步最新通知，若有新項目則彈出系統通知，點擊後 deep link 回到通知列表。
+
+#### 元件職責總表
+
+| 類別 | 位置 | 職責 |
+|------|------|------|
+| `Notification` / `NotificationType` | `feature/notifications/domain/model` | Domain 模型（id, title, body, type, isRead, createdAt） |
+| `NotificationsRepository` | `feature/notifications/domain/repo` | 通知資料抽象介面（observe / refresh / mark read） |
+| `GetNotificationsUseCase` | `feature/notifications/domain/usecase` | 訂閱本地 Room Flow |
+| `RefreshNotificationsUseCase` | 同上 | 拉取遠端並寫入 Room |
+| `MarkNotificationReadUseCase` | 同上 | 驗證 id 後標記單筆已讀 |
+| `MarkAllNotificationsReadUseCase` | 同上 | 全部標記已讀 |
+| `GetUnreadCountUseCase` | 同上 | 訂閱未讀數量（驅動 ProfileScreen Badge） |
+| `NotificationEntity` / `NotificationDao` | `feature/notifications/data/local` | Room 持久層 |
+| `NotificationDto` / `NotificationsResponseDto` | `feature/notifications/data/remote/dto` | Retrofit DTO |
+| `NotificationsApi` | `feature/notifications/data/remote` | Retrofit 介面（GET list / PATCH read / POST read-all） |
+| `NotificationMapper` | `feature/notifications/data/mapper` | DTO ↔ Entity ↔ Domain Model 轉換 |
+| `NotificationsRepositoryImpl` | `feature/notifications/data/repo` | Offline-first 實作 |
+| `NotificationHelper` | `core/notification` | 建立 channel、發出系統通知、設定 deep link PendingIntent |
+| `NotificationSyncWorker` | `core/notification` | `@HiltWorker` + `@AssistedInject`，週期 15 分鐘 |
+| `NotificationsViewModel` | `feature/notifications/presentation/viewmodel` | MVI 狀態管理，啟動即訂閱 + 觸發 refresh |
+| `NotificationsScreen` | `feature/notifications/presentation/ui` | Material3 列表、`PullToRefreshBox`、空狀態、`Snackbar` 重試 |
+
+#### 狀態定義
+
+```kotlin
+data class NotificationsUiState(
+    val isLoading: Boolean = false,
+    val isRefreshing: Boolean = false,
+    val items: List<Notification> = emptyList(),
+    val errorMessage: String? = null,
+)
+
+sealed interface NotificationsUiEvent {
+    data class ShowError(val message: String) : NotificationsUiEvent
+    data object AllMarkedRead : NotificationsUiEvent
+}
+
+sealed interface NotificationsIntent {
+    data object Load : NotificationsIntent
+    data object Refresh : NotificationsIntent
+    data class MarkRead(val id: String) : NotificationsIntent
+    data object MarkAllRead : NotificationsIntent
+    data object Retry : NotificationsIntent
+}
+```
+
+#### Offline-first 資料流
+
+```
+NotificationsScreen
+  └─► NotificationsViewModel
+        ├─ 訂閱：GetNotificationsUseCase() ──► NotificationDao.observeAll() (Flow)
+        │                                       │
+        │                          ┌────────────┘
+        │                          ▼
+        │                  Room → Domain（NotificationMapper.toDomain(entity)）
+        │                          │
+        │                          ▼
+        │                NotificationsUiState.items 自動更新
+        │
+        └─ 觸發：RefreshNotificationsUseCase()
+              └─► NotificationsRepositoryImpl.refresh()
+                    ├─ NotificationsApi.getNotifications()
+                    ├─ safeApiCall 包裝錯誤
+                    └─ NotificationDao.upsertAll(entities)
+                          └─► 上游 Flow 自動 re-emit
+```
+
+#### MarkRead 樂觀更新策略
+
+| 步驟 | 動作 |
+|------|------|
+| 1 | UI 點擊單筆通知 → `onIntent(MarkRead(id))` |
+| 2 | ViewModel → `MarkNotificationReadUseCase(id)`（先驗證 id 非空） |
+| 3 | RepositoryImpl 先呼叫 `NotificationsApi.markAsRead(id)`（PATCH） |
+| 4 | API 成功 → `NotificationDao.markAsRead(id)` 將該筆 `isRead = 1` |
+| 5 | UI 透過 Flow 收到變更，未讀小圓點消失 |
+| 失敗 | 不更新 Room，由 `NotificationsUiEvent.ShowError` 顯示 Snackbar |
+
+> 「樂觀更新」由 Room Flow + Mock API 的低延遲特性近似達成；正式上線可改為先寫 Room、再向後端非同步同步並在失敗時 rollback。
+
+#### WorkManager 排程策略
+
+| 項目 | 內容 |
+|------|------|
+| Worker | `NotificationSyncWorker`（`CoroutineWorker`，`@HiltWorker` + `@AssistedInject`） |
+| Worker Factory | `HiltWorkerFactory`（由 Hilt 自動產生），注入於 `AndroidMvvmArchApplication.workManagerConfiguration` |
+| 排程器 | `WorkManager.enqueueUniquePeriodicWork` |
+| 唯一名稱 | `notification_sync` |
+| 衝突策略 | `ExistingPeriodicWorkPolicy.KEEP`（已存在則不重建） |
+| 間隔 | 15 分鐘（系統最短允許值） |
+| 啟動時機 | `AndroidMvvmArchApplication.onCreate`（無條件 enqueue，Worker 內部會檢查 settings） |
+| 失敗重試 | 最多 `MAX_RETRY_COUNT = 3` 次，超過直接 `Result.success()` 等下個週期 |
+
+#### Worker 與 Settings notificationsEnabled 互動
+
+```
+doWork()
+  1. settingsDataStore.settingsFlow.first().notificationsEnabled
+       ├─ false → Result.success() 直接結束（不打 API、不顯示系統通知）
+       └─ true  → 繼續下一步
+  2. 讀取目前未讀 id 集合 (previousUnreadIds)
+  3. RefreshNotificationsUseCase()
+       ├─ Result.failure → runAttemptCount < 3 則 Result.retry()，否則 success
+       └─ Result.success
+  4. 重新讀取最新未讀清單，過濾出不在 previousUnreadIds 的新項目
+  5. NotificationHelper.showNotification(...) 最多顯示 3 筆
+  6. Result.success()
+```
+
+#### 系統通知設計
+
+| 項目 | 內容 |
+|------|------|
+| Channel ID | `general_notifications` |
+| Channel 名稱 | `一般通知` |
+| Importance | `IMPORTANCE_DEFAULT` |
+| Manifest 權限 | `<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />` |
+| Runtime 請求 | Android 13+（`Build.VERSION.SDK_INT >= TIRAMISU`）才需要；UI 進入 `NotificationsScreen` 時透過 `rememberLauncherForActivityResult(RequestPermission)` 觸發 |
+| 點擊行為 | PendingIntent 啟動 `MainActivity`（`singleTask`），帶 `EXTRA_DEEP_LINK = "notifications"`；MainActivity 解析後使用既有 `NavController` 跳轉至 `Routes.NOTIFICATIONS` |
+| Channel 建立 | `AndroidMvvmArchApplication.onCreate` 呼叫 `NotificationHelper.createChannel()`；重複呼叫安全（先檢查 channel 是否存在） |
+
+#### Hilt + WorkManager 整合
+
+```kotlin
+// AndroidMvvmArchApplication
+@HiltAndroidApp
+class AndroidMvvmArchApplication : Application(), Configuration.Provider {
+    @Inject lateinit var workerFactory: HiltWorkerFactory
+    @Inject lateinit var notificationHelper: NotificationHelper
+
+    override val workManagerConfiguration: Configuration
+        get() = Configuration.Builder().setWorkerFactory(workerFactory).build()
+
+    override fun onCreate() {
+        super.onCreate()
+        notificationHelper.createChannel()
+        NotificationSyncWorker.enqueuePeriodic(WorkManager.getInstance(this))
+    }
+}
+```
+
+> Manifest 中已停用 `WorkManagerInitializer`（透過 `androidx.startup.InitializationProvider` + `tools:node="remove"`），避免雙重初始化；改由 Application 的 `Configuration.Provider` 在首次 `WorkManager.getInstance(this)` 觸發時建立。
+
+#### 與 Settings 模組整合
+
+| 場景 | 行為 |
+|------|------|
+| 使用者於 SettingsScreen 關閉「通知」Switch（`notificationsEnabled = false`） | DataStore 立即寫入；下一次 Worker 啟動讀到 false 時不執行 API 與系統通知 |
+| 使用者重新開啟 | DataStore 立即寫入；Worker 下一週期會恢復同步並於有新通知時推播 |
+| 應用內通知列表 | 不受 `notificationsEnabled` 影響（仍可手動進入查看歷史） |
+
+#### Mock 替換點（未來接 FCM）
+
+| 抽象層 | 目前實作 | 替換為真實後端 |
+|--------|---------|----------------|
+| `NotificationsApi`（Retrofit interface） | `MockApiInterceptor` 三個端點回應 | 移除 mock 後 Retrofit 自動打真實 URL |
+| `NotificationsRepository` | `NotificationsRepositoryImpl`（Offline-first） | 不需修改 |
+| 推播來源 | `NotificationSyncWorker` 週期輪詢 | 新增 `FirebaseMessagingService` → 收到推播後同樣呼叫 `RefreshNotificationsUseCase()` + `NotificationHelper.showNotification(...)` |
+| 系統通知顯示 | `NotificationHelper` | 共用，不必修改 |
+
+#### UI 規範
+
+- 列表項目：`Row` 配置 = 未讀小圓點（`primary` color，已讀則透明）+ 標題（`titleSmall`，未讀粗體）+ 內容（`bodyMedium`，maxLines=2 ellipsis）+ 類型標籤（`labelSmall`，primary 色）+ 相對時間（`labelSmall`，`onSurfaceVariant`）
+- 下拉刷新：Material3 `PullToRefreshBox`（`isRefreshing = uiState.isRefreshing`）
+- 空狀態：`Icons.Filled.NotificationsNone` + 「目前沒有通知」
+- Loading：`CircularProgressIndicator` 置中（僅在 items 為空時顯示）
+- 錯誤：`Snackbar`（含「重試」action label）→ 觸發 `NotificationsIntent.Retry`
+- TopAppBar：標題「通知」、返回鈕、`Icons.Filled.DoneAll` action 觸發 `MarkAllRead`（無未讀時 disabled）
+- ProfileScreen 入口：TopAppBar 鈴鐺 `IconButton` + `BadgedBox`（未讀數量 > 0 時顯示 `Badge`）
+
 ---
 
 ## 7. 安全設計（DLP）
@@ -630,6 +836,7 @@ Routes.FORGOT_PASSWORD = "forgot_password"
 Routes.RESET_PASSWORD  = "reset_password"
 Routes.PROFILE         = "profile"
 Routes.SETTINGS        = "settings"
+Routes.NOTIFICATIONS   = "notifications"
 ```
 
 ### 啟動路由決策（MainViewModel）
@@ -650,8 +857,14 @@ LoginScreen ─── 登入成功 ──► ProfileScreen
 ProfileScreen ─ 設定按鈕 ──► SettingsScreen
                               (push)
 
-SettingsScreen ─ 返回 ──────► ProfileScreen
+ProfileScreen ─ 通知鈴鐺（Badge）──► NotificationsScreen
+                              (push)
+
+SettingsScreen / NotificationsScreen ─ 返回 ──────► ProfileScreen
                               (popBackStack)
+
+System Notification ─ 點擊 ──► MainActivity (deep link "notifications") ──► NotificationsScreen
+                              (launchSingleTop)
 
 ProfileScreen / SettingsScreen ─ 登出 ──► LoginScreen
                               (popUpTo root, inclusive=true)

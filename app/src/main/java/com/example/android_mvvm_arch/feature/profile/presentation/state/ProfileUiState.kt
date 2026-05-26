@@ -12,4 +12,5 @@ data class ProfileUiState(
     val isEditing: Boolean = false,
     val errorMessage: String? = null,
     val successMessage: String? = null,
+    val unreadNotificationsCount: Int = 0,
 )

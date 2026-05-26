@@ -1,5 +1,5 @@
 # 循序圖 (Sequence Diagram)
-# Android MVVM Architecture — Auth, Profile & Settings
+# Android MVVM Architecture — Auth, Profile, Settings & Notifications
 
 > 使用 [Mermaid](https://mermaid.js.org/) 語法繪製，可在 GitHub、GitLab、Markdown 預覽工具中直接渲染。
 
@@ -591,4 +591,249 @@ sequenceDiagram
     SVM-->>SS: uiState.language = "en"
     deactivate SVM
     SS-->>User: SegmentedButton 顯示 English 已選中
+```
+
+---
+
+## 15. Notifications 列表載入與下拉刷新
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant PS as ProfileScreen
+    participant NS as NotificationsScreen
+    participant NVM as NotificationsViewModel
+    participant GetUC as GetNotificationsUseCase
+    participant RefUC as RefreshNotificationsUseCase
+    participant NR as NotificationsRepositoryImpl
+    participant DAO as NotificationDao
+    participant API as NotificationsApi
+    participant Mock as MockApiInterceptor
+
+    User->>PS: 點擊鈴鐺 IconButton（含未讀 Badge）
+    PS->>NS: navigate(Routes.NOTIFICATIONS)
+    NS->>NVM: hiltViewModel()
+    activate NVM
+
+    par 訂閱本地 Room Flow
+        NVM->>GetUC: invoke()
+        GetUC->>NR: observeNotifications()
+        NR->>DAO: observeAll() (Flow)
+        DAO-->>NR: Flow<List<NotificationEntity>>
+        NR-->>NVM: Flow<List<Notification>>
+        NVM-->>NS: uiState.items 更新（先顯示快取，可能為空）
+    and 初次刷新
+        NVM->>RefUC: invoke()
+        RefUC->>NR: refresh()
+        NR->>API: getNotifications()
+        API->>Mock: 攔截 GET /api/v1/notifications
+        Mock-->>API: 200 NotificationsResponseDto (7 筆 demo)
+        API-->>NR: NotificationsResponseDto
+        NR->>DAO: upsertAll(entities) ← 寫入快取
+        DAO-->>NVM: Flow 自動 re-emit
+        NR-->>RefUC: Result.success(Unit)
+        RefUC-->>NVM: Result.success(Unit)
+        NVM-->>NS: uiState.isLoading = false
+    end
+
+    deactivate NVM
+    NS-->>User: 顯示通知列表 + 未讀小圓點
+
+    note over User,NS: 使用者下拉刷新
+    User->>NS: 下拉 PullToRefreshBox
+    NS->>NVM: onIntent(Refresh)
+    activate NVM
+    NVM-->>NS: uiState.isRefreshing = true
+    NVM->>RefUC: invoke() (同上流程)
+    RefUC-->>NVM: Result.success(Unit)
+    NVM-->>NS: uiState.isRefreshing = false
+    deactivate NVM
+```
+
+---
+
+## 16. 標記單筆通知為已讀（樂觀更新）
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant NS as NotificationsScreen
+    participant NVM as NotificationsViewModel
+    participant UC as MarkNotificationReadUseCase
+    participant NR as NotificationsRepositoryImpl
+    participant API as NotificationsApi
+    participant Mock as MockApiInterceptor
+    participant DAO as NotificationDao
+
+    User->>NS: 點擊未讀通知列
+    NS->>NVM: onIntent(MarkRead("ntf_002"))
+    activate NVM
+
+    NVM->>UC: invoke("ntf_002")
+    activate UC
+    UC->>UC: 驗證 id.isNotBlank()
+    UC->>NR: markAsRead("ntf_002")
+    activate NR
+    NR->>API: PATCH /api/v1/notifications/ntf_002/read
+    activate API
+    API->>Mock: 攔截 PATCH
+    Mock-->>API: 204 No Content
+    deactivate API
+    API-->>NR: Unit
+    NR->>DAO: markAsRead("ntf_002") ← UPDATE isRead = 1
+    DAO-->>NVM: Flow 自動 re-emit（含已讀狀態）
+    NR-->>UC: Result.success(Unit)
+    deactivate NR
+    UC-->>NVM: Result.success(Unit)
+    deactivate UC
+    deactivate NVM
+    NS-->>User: 該列未讀小圓點消失、字重變正常
+
+    note over NS,NVM: 失敗路徑：API 回 4xx/5xx<br/>UC 回 Result.failure → uiEvent emit ShowError(message)<br/>Snackbar 顯示「標記為已讀失敗」+ 重試按鈕
+```
+
+---
+
+## 17. 全部標記為已讀
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant NS as NotificationsScreen
+    participant NVM as NotificationsViewModel
+    participant UC as MarkAllNotificationsReadUseCase
+    participant NR as NotificationsRepositoryImpl
+    participant API as NotificationsApi
+    participant Mock as MockApiInterceptor
+    participant DAO as NotificationDao
+    participant Snack as SnackbarHostState
+
+    User->>NS: 點擊 TopAppBar "全部標記為已讀"
+    NS->>NVM: onIntent(MarkAllRead)
+    activate NVM
+
+    NVM->>UC: invoke()
+    activate UC
+    UC->>NR: markAllAsRead()
+    activate NR
+    NR->>API: POST /api/v1/notifications/read-all
+    API->>Mock: 攔截 POST
+    Mock-->>API: 204 No Content
+    API-->>NR: Unit
+    NR->>DAO: markAllAsRead() ← UPDATE WHERE isRead = 0
+    DAO-->>NVM: Flow 自動 re-emit
+    NR-->>UC: Result.success(Unit)
+    deactivate NR
+    UC-->>NVM: Result.success(Unit)
+    deactivate UC
+
+    NVM->>NS: uiEvent emit AllMarkedRead
+    deactivate NVM
+    NS->>Snack: showSnackbar("已全部標記為已讀")
+    Snack-->>User: 顯示 Snackbar，所有未讀圓點消失
+```
+
+---
+
+## 18. WorkManager 背景同步 + 系統通知
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant WM as WorkManager
+    participant W as NotificationSyncWorker
+    participant DS as SettingsDataStore
+    participant GetUC as GetNotificationsUseCase
+    participant RefUC as RefreshNotificationsUseCase
+    participant NR as NotificationsRepositoryImpl
+    participant API as NotificationsApi
+    participant DAO as NotificationDao
+    participant Helper as NotificationHelper
+    participant Sys as Android NotificationManager
+    actor User
+
+    note over WM,W: Application.onCreate 排程<br/>enqueueUniquePeriodicWork(<br/>  name = "notification_sync",<br/>  policy = KEEP,<br/>  interval = 15 min<br/>)
+
+    WM->>W: 每 15 分鐘執行 doWork()
+    activate W
+
+    W->>DS: settingsFlow.first().notificationsEnabled
+    DS-->>W: Boolean
+
+    alt notificationsEnabled == false
+        W-->>WM: Result.success()
+        note right of W: 直接跳過本次同步，<br/>不打 API、不顯示系統通知
+    else 啟用
+        W->>GetUC: invoke().first()
+        GetUC->>NR: observeNotifications()
+        NR->>DAO: observeAll()
+        DAO-->>W: 計算 previousUnreadIds: Set<String>
+
+        W->>RefUC: invoke()
+        RefUC->>NR: refresh()
+        NR->>API: getNotifications()
+        API-->>NR: NotificationsResponseDto
+        NR->>DAO: upsertAll(entities)
+        NR-->>RefUC: Result.success
+        RefUC-->>W: Result.success
+
+        W->>GetUC: invoke().first() (再次讀取最新清單)
+        GetUC-->>W: latestUnread: List<Notification>
+        W->>W: newUnread = latestUnread \\ previousUnreadIds
+
+        loop 最多前 3 筆新通知
+            W->>Helper: showNotification(notification)
+            Helper->>Sys: NotificationManagerCompat.notify(...)
+            Sys-->>User: 顯示系統通知<br/>（標題、內文、Big Text）
+        end
+
+        W-->>WM: Result.success()
+    end
+    deactivate W
+
+    note over User,Sys: 使用者點擊系統通知
+    User->>Sys: tap
+    Sys->>Sys: PendingIntent 啟動 MainActivity<br/>(singleTask, EXTRA_DEEP_LINK="notifications")
+    Sys-->>User: 開啟 App → NotificationsScreen
+```
+
+---
+
+## 19. 系統通知 deep link 導航流程
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant Sys as Android NotificationManager
+    participant MA as MainActivity
+    participant Nav as NavController
+    participant NS as NotificationsScreen
+
+    User->>Sys: 點擊系統通知
+    Sys->>MA: PendingIntent.getActivity()<br/>(singleTask, EXTRA_DEEP_LINK="notifications")
+    activate MA
+
+    alt 應用程式已執行
+        MA->>MA: onNewIntent(intent)
+        MA->>MA: setIntent(intent) + consumeDeepLink(intent)
+    else 冷啟動
+        MA->>MA: onCreate() → consumeDeepLink(intent)
+    end
+
+    MA->>MA: pendingDeepLink.value = "notifications"
+    MA->>MA: LaunchedEffect 觀察 deepLink + startDestination
+
+    alt startDestination != LOGIN
+        MA->>Nav: navigate(Routes.NOTIFICATIONS, launchSingleTop = true)
+        Nav->>NS: 顯示通知列表
+        NS-->>User: 看到該通知對應的列表頁
+        MA->>MA: pendingDeepLink.value = null
+    else 未登入
+        note over MA,Nav: 未登入時暫不導航，<br/>避免繞過登入流程；<br/>使用者登入後可從入口進入
+    end
+    deactivate MA
 ```

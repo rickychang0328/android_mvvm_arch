@@ -7,4 +7,5 @@ object Routes {
     const val RESET_PASSWORD = "reset_password"
     const val PROFILE = "profile"
     const val SETTINGS = "settings"
+    const val NOTIFICATIONS = "notifications"
 }

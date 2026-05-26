@@ -2,6 +2,8 @@ package com.example.android_mvvm_arch.di
 
 import com.example.android_mvvm_arch.feature.auth.data.repo.AuthRepositoryImpl
 import com.example.android_mvvm_arch.feature.auth.domain.repo.AuthRepository
+import com.example.android_mvvm_arch.feature.notifications.data.repo.NotificationsRepositoryImpl
+import com.example.android_mvvm_arch.feature.notifications.domain.repo.NotificationsRepository
 import com.example.android_mvvm_arch.feature.profile.data.repo.ProfileRepositoryImpl
 import com.example.android_mvvm_arch.feature.profile.domain.repo.ProfileRepository
 import com.example.android_mvvm_arch.feature.settings.data.repo.SettingsRepositoryImpl
@@ -26,4 +28,10 @@ abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindSettingsRepository(impl: SettingsRepositoryImpl): SettingsRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindNotificationsRepository(
+        impl: NotificationsRepositoryImpl,
+    ): NotificationsRepository
 }
