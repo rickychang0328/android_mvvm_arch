@@ -8,4 +8,8 @@ interface SettingsRepository {
     suspend fun updateDarkMode(enabled: Boolean)
     suspend fun updateLanguage(language: String)
     suspend fun updateNotificationsEnabled(enabled: Boolean)
+    suspend fun updateAnalyticsEnabled(enabled: Boolean)
+    suspend fun updateCrashReportingEnabled(enabled: Boolean)
+    suspend fun updatePersonalizedAdsEnabled(enabled: Boolean)
+    suspend fun updateBiometricLoginEnabled(enabled: Boolean)
 }

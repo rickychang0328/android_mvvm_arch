@@ -25,4 +25,20 @@ class SettingsRepositoryImpl @Inject constructor(
     override suspend fun updateNotificationsEnabled(enabled: Boolean) {
         settingsDataStore.updateNotificationsEnabled(enabled)
     }
+
+    override suspend fun updateAnalyticsEnabled(enabled: Boolean) {
+        settingsDataStore.updateAnalyticsEnabled(enabled)
+    }
+
+    override suspend fun updateCrashReportingEnabled(enabled: Boolean) {
+        settingsDataStore.updateCrashReportingEnabled(enabled)
+    }
+
+    override suspend fun updatePersonalizedAdsEnabled(enabled: Boolean) {
+        settingsDataStore.updatePersonalizedAdsEnabled(enabled)
+    }
+
+    override suspend fun updateBiometricLoginEnabled(enabled: Boolean) {
+        settingsDataStore.updateBiometricLoginEnabled(enabled)
+    }
 }

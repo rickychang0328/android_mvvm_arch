@@ -87,6 +87,10 @@ classDiagram
             +isDarkMode: Boolean
             +language: String
             +notificationsEnabled: Boolean
+            +analyticsEnabled: Boolean
+            +crashReportingEnabled: Boolean
+            +personalizedAdsEnabled: Boolean
+            +biometricLoginEnabled: Boolean
         }
         class SettingsRepository {
             <<interface>>
@@ -94,6 +98,10 @@ classDiagram
             +updateDarkMode(enabled: Boolean)
             +updateLanguage(language: String)
             +updateNotificationsEnabled(enabled: Boolean)
+            +updateAnalyticsEnabled(enabled: Boolean)
+            +updateCrashReportingEnabled(enabled: Boolean)
+            +updatePersonalizedAdsEnabled(enabled: Boolean)
+            +updateBiometricLoginEnabled(enabled: Boolean)
         }
         class GetAppSettingsUseCase {
             -settingsRepository: SettingsRepository
@@ -113,6 +121,31 @@ classDiagram
             -settingsRepository: SettingsRepository
             -dispatcherProvider: DispatcherProvider
             +invoke(enabled: Boolean) Result~Unit~
+        }
+        class UpdateAnalyticsUseCase {
+            -settingsRepository: SettingsRepository
+            -dispatcherProvider: DispatcherProvider
+            +invoke(enabled: Boolean) Result~Unit~
+        }
+        class UpdateCrashReportingUseCase {
+            -settingsRepository: SettingsRepository
+            -dispatcherProvider: DispatcherProvider
+            +invoke(enabled: Boolean) Result~Unit~
+        }
+        class UpdatePersonalizedAdsUseCase {
+            -settingsRepository: SettingsRepository
+            -dispatcherProvider: DispatcherProvider
+            +invoke(enabled: Boolean) Result~Unit~
+        }
+        class UpdateBiometricLoginUseCase {
+            -settingsRepository: SettingsRepository
+            -dispatcherProvider: DispatcherProvider
+            +invoke(enabled: Boolean) Result~Unit~
+        }
+        class ClearCacheUseCase {
+            -profileRepository: ProfileRepository
+            -dispatcherProvider: DispatcherProvider
+            +invoke() Result~Unit~
         }
     }
 
@@ -215,6 +248,10 @@ classDiagram
             +updateDarkMode(enabled: Boolean)
             +updateLanguage(language: String)
             +updateNotificationsEnabled(enabled: Boolean)
+            +updateAnalyticsEnabled(enabled: Boolean)
+            +updateCrashReportingEnabled(enabled: Boolean)
+            +updatePersonalizedAdsEnabled(enabled: Boolean)
+            +updateBiometricLoginEnabled(enabled: Boolean)
         }
         class SettingsDataStoreImpl {
             -dataStore: DataStore~Preferences~
@@ -222,6 +259,10 @@ classDiagram
             +updateDarkMode(enabled: Boolean)
             +updateLanguage(language: String)
             +updateNotificationsEnabled(enabled: Boolean)
+            +updateAnalyticsEnabled(enabled: Boolean)
+            +updateCrashReportingEnabled(enabled: Boolean)
+            +updatePersonalizedAdsEnabled(enabled: Boolean)
+            +updateBiometricLoginEnabled(enabled: Boolean)
         }
         class SettingsRepositoryImpl {
             -settingsDataStore: SettingsDataStore
@@ -229,6 +270,10 @@ classDiagram
             +updateDarkMode(enabled: Boolean)
             +updateLanguage(language: String)
             +updateNotificationsEnabled(enabled: Boolean)
+            +updateAnalyticsEnabled(enabled: Boolean)
+            +updateCrashReportingEnabled(enabled: Boolean)
+            +updatePersonalizedAdsEnabled(enabled: Boolean)
+            +updateBiometricLoginEnabled(enabled: Boolean)
         }
     }
 
@@ -351,18 +396,29 @@ classDiagram
             +isDarkMode: Boolean
             +language: String
             +notificationsEnabled: Boolean
+            +analyticsEnabled: Boolean
+            +crashReportingEnabled: Boolean
+            +personalizedAdsEnabled: Boolean
+            +biometricLoginEnabled: Boolean
             +errorMessage: String?
         }
         class SettingsUiEvent {
             <<sealed interface>>
             NavigateBack
             NavigateToLogin
+            CacheCleared
+            ShowError
         }
         class SettingsIntent {
             <<sealed interface>>
             DarkModeChanged
             LanguageChanged
             NotificationsChanged
+            UpdateAnalytics
+            UpdateCrashReporting
+            UpdatePersonalizedAds
+            UpdateBiometricLogin
+            ClearCache
             Logout
         }
         class SettingsViewModel {
@@ -370,6 +426,11 @@ classDiagram
             -updateDarkModeUseCase: UpdateDarkModeUseCase
             -updateLanguageUseCase: UpdateLanguageUseCase
             -updateNotificationsUseCase: UpdateNotificationsUseCase
+            -updateAnalyticsUseCase: UpdateAnalyticsUseCase
+            -updateCrashReportingUseCase: UpdateCrashReportingUseCase
+            -updatePersonalizedAdsUseCase: UpdatePersonalizedAdsUseCase
+            -updateBiometricLoginUseCase: UpdateBiometricLoginUseCase
+            -clearCacheUseCase: ClearCacheUseCase
             -logoutUseCase: LogoutUseCase
             +uiState: StateFlow~SettingsUiState~
             +uiEvent: SharedFlow~SettingsUiEvent~
@@ -410,6 +471,16 @@ classDiagram
     UpdateLanguageUseCase --> DispatcherProvider
     UpdateNotificationsUseCase --> SettingsRepository
     UpdateNotificationsUseCase --> DispatcherProvider
+    UpdateAnalyticsUseCase --> SettingsRepository
+    UpdateAnalyticsUseCase --> DispatcherProvider
+    UpdateCrashReportingUseCase --> SettingsRepository
+    UpdateCrashReportingUseCase --> DispatcherProvider
+    UpdatePersonalizedAdsUseCase --> SettingsRepository
+    UpdatePersonalizedAdsUseCase --> DispatcherProvider
+    UpdateBiometricLoginUseCase --> SettingsRepository
+    UpdateBiometricLoginUseCase --> DispatcherProvider
+    ClearCacheUseCase --> ProfileRepository
+    ClearCacheUseCase --> DispatcherProvider
 
     %% Data 實作 Domain 介面
     AuthRepositoryImpl ..|> AuthRepository
@@ -447,6 +518,11 @@ classDiagram
     SettingsViewModel --> UpdateDarkModeUseCase
     SettingsViewModel --> UpdateLanguageUseCase
     SettingsViewModel --> UpdateNotificationsUseCase
+    SettingsViewModel --> UpdateAnalyticsUseCase
+    SettingsViewModel --> UpdateCrashReportingUseCase
+    SettingsViewModel --> UpdatePersonalizedAdsUseCase
+    SettingsViewModel --> UpdateBiometricLoginUseCase
+    SettingsViewModel --> ClearCacheUseCase
     SettingsViewModel --> LogoutUseCase
 
     %% Theme 整合
@@ -630,11 +706,35 @@ classDiagram
         +invoke(language) Result~Unit~
     }
 
+    class UpdateAnalyticsUseCase {
+        +invoke(enabled) Result~Unit~
+    }
+
+    class UpdateCrashReportingUseCase {
+        +invoke(enabled) Result~Unit~
+    }
+
+    class UpdatePersonalizedAdsUseCase {
+        +invoke(enabled) Result~Unit~
+    }
+
+    class UpdateBiometricLoginUseCase {
+        +invoke(enabled) Result~Unit~
+    }
+
+    class ClearCacheUseCase {
+        +invoke() Result~Unit~
+    }
+
     class SettingsRepository {
         <<interface>>
         +settingsFlow: Flow~AppSettings~
         +updateDarkMode(Boolean)
         +updateLanguage(String)
+        +updateAnalyticsEnabled(Boolean)
+        +updateCrashReportingEnabled(Boolean)
+        +updatePersonalizedAdsEnabled(Boolean)
+        +updateBiometricLoginEnabled(Boolean)
     }
 
     class SettingsRepositoryImpl {
@@ -650,6 +750,11 @@ classDiagram
         +settingsFlow: Flow~AppSettings~
     }
 
+    class ProfileRepository {
+        <<interface>>
+        +clearProfileCache()
+    }
+
     class MainActivity {
         -settingsDataStore: SettingsDataStore
     }
@@ -662,8 +767,18 @@ classDiagram
     SettingsViewModel --> GetAppSettingsUseCase : observe
     SettingsViewModel --> UpdateDarkModeUseCase : invoke()
     SettingsViewModel --> UpdateLanguageUseCase : invoke()
+    SettingsViewModel --> UpdateAnalyticsUseCase : invoke()
+    SettingsViewModel --> UpdateCrashReportingUseCase : invoke()
+    SettingsViewModel --> UpdatePersonalizedAdsUseCase : invoke()
+    SettingsViewModel --> UpdateBiometricLoginUseCase : invoke()
+    SettingsViewModel --> ClearCacheUseCase : invoke()
     GetAppSettingsUseCase --> SettingsRepository
     UpdateDarkModeUseCase --> SettingsRepository
+    UpdateAnalyticsUseCase --> SettingsRepository
+    UpdateCrashReportingUseCase --> SettingsRepository
+    UpdatePersonalizedAdsUseCase --> SettingsRepository
+    UpdateBiometricLoginUseCase --> SettingsRepository
+    ClearCacheUseCase --> ProfileRepository : clearProfileCache()
     SettingsRepositoryImpl ..|> SettingsRepository
     SettingsRepositoryImpl --> SettingsDataStore
     SettingsDataStoreImpl ..|> SettingsDataStore

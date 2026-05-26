@@ -187,7 +187,7 @@ Entity─ProfileMapper►  Domain Model
 | `core/util` | `DispatcherProvider` | Coroutine Dispatcher 介面 |
 | `core/util` | `DefaultDispatcherProvider` | 正式 Dispatcher 實作 |
 | `core/database` | `AppDatabase` | Room Database 定義 |
-| `core/datastore` | `AppSettings` | 設定資料 class（isDarkMode, language, notificationsEnabled） |
+| `core/datastore` | `AppSettings` | 設定資料 class（isDarkMode, language, notificationsEnabled, analyticsEnabled, crashReportingEnabled, personalizedAdsEnabled, biometricLoginEnabled） |
 | `core/datastore` | `SettingsDataStore` | 設定讀寫 Flow 介面 |
 | `core/datastore` | `SettingsDataStoreImpl` | Preferences DataStore 實作 |
 
@@ -286,7 +286,12 @@ app/src/main/java/com/example/android_mvvm_arch/
         │   └── usecase/ GetAppSettingsUseCase.kt,
         │                UpdateDarkModeUseCase.kt,
         │                UpdateLanguageUseCase.kt,
-        │                UpdateNotificationsUseCase.kt
+        │                UpdateNotificationsUseCase.kt,
+        │                UpdateAnalyticsUseCase.kt,
+        │                UpdateCrashReportingUseCase.kt,
+        │                UpdatePersonalizedAdsUseCase.kt,
+        │                UpdateBiometricLoginUseCase.kt,
+        │                ClearCacheUseCase.kt
         ├── data/
         │   └── repo/   SettingsRepositoryImpl.kt
         └── presentation/
@@ -457,10 +462,14 @@ data class AppSettings(
     val isDarkMode: Boolean = false,
     val language: String = "zh-TW",
     val notificationsEnabled: Boolean = true,
+    val analyticsEnabled: Boolean = true,
+    val crashReportingEnabled: Boolean = true,
+    val personalizedAdsEnabled: Boolean = false,
+    val biometricLoginEnabled: Boolean = false,
 )
 ```
 
-Preferences Keys：`IS_DARK_MODE`、`LANGUAGE`、`NOTIFICATIONS_ENABLED`（檔名 `app_settings`）
+Preferences Keys：`IS_DARK_MODE`、`LANGUAGE`、`NOTIFICATIONS_ENABLED`、`ANALYTICS_ENABLED`、`CRASH_REPORTING_ENABLED`、`PERSONALIZED_ADS_ENABLED`、`BIOMETRIC_LOGIN_ENABLED`（檔名 `app_settings`）
 
 #### 資料流
 
@@ -486,6 +495,66 @@ SettingsScreen
 - `MainActivity` 注入 `SettingsDataStore`，以 `collectAsStateWithLifecycle` 訂閱 `settingsFlow`
 - 將 `appSettings.isDarkMode` 傳入 `Android_mvvm_archTheme(darkTheme = ...)`
 - 設定頁切換深色模式後，全 App 主題即時更新，無需重啟
+
+#### 6.3.1 隱私設定（Privacy Settings）
+
+延伸自既有的 Settings 模組，於設定頁下方新增「隱私與資料」分組，所有偏好皆儲存於相同的 `app_settings` DataStore Preferences；不涉及網路請求，亦不影響 `EncryptedTokenStorage`。
+
+##### 4 個 Switch 偏好
+
+| 偏好 | 預設值 | UseCase | Preferences Key | 說明 |
+|------|--------|---------|-----------------|------|
+| 使用分析（`analyticsEnabled`） | `true` | `UpdateAnalyticsUseCase` | `analytics_enabled` | 協助改善 App 體驗，可關閉以停止匿名使用資料蒐集 |
+| 當機回報（`crashReportingEnabled`） | `true` | `UpdateCrashReportingUseCase` | `crash_reporting_enabled` | 自動回報當機資訊，協助診斷穩定性問題 |
+| 個人化廣告（`personalizedAdsEnabled`） | `false` | `UpdatePersonalizedAdsUseCase` | `personalized_ads_enabled` | 根據使用習慣顯示相關內容；預設關閉以保守隱私 |
+| 生物辨識登入（`biometricLoginEnabled`） | `false` | `UpdateBiometricLoginUseCase` | `biometric_login_enabled` | 僅儲存使用者偏好；實際 BiometricPrompt 整合不在本版本範圍 |
+
+> 每個 UseCase 均委派至 `SettingsRepository`，最終寫入 `SettingsDataStoreImpl.edit { }`，由 `settingsFlow` 自動 re-emit 並更新 `SettingsUiState`。
+
+##### 清除快取（ClearCacheUseCase）
+
+| 項目 | 說明 |
+|------|------|
+| 入口 | 設定頁「清除快取」按鈕，點擊後跳出 Material3 `AlertDialog` 確認 |
+| 範圍 | 透過 `ProfileRepository.clearProfileCache()` 清空 Profile Room 快取 |
+| 保留項目 | `EncryptedTokenStorage`（Access / Refresh Token）、`SettingsDataStore`（所有偏好） |
+| 成功回饋 | `SettingsViewModel` 發出 `SettingsUiEvent.CacheCleared`，UI 透過 `SnackbarHostState` 顯示「已清除本地快取」 |
+| 失敗回饋 | 包裝為 `SettingsUiEvent.ShowError`，由 Snackbar 顯示錯誤訊息 |
+
+##### 隱私權政策
+
+| 項目 | 說明 |
+|------|------|
+| 入口 | 設定頁「隱私權政策」TextButton |
+| 行為 | 以 `Intent.ACTION_VIEW` 開啟外部瀏覽器 |
+| URL | `https://example.com/privacy`（示範用，可於發行時替換） |
+
+##### MVI 擴充
+
+```kotlin
+sealed interface SettingsIntent {
+    // 既有：DarkModeChanged / LanguageChanged / NotificationsChanged / Logout
+    data class UpdateAnalytics(val enabled: Boolean) : SettingsIntent
+    data class UpdateCrashReporting(val enabled: Boolean) : SettingsIntent
+    data class UpdatePersonalizedAds(val enabled: Boolean) : SettingsIntent
+    data class UpdateBiometricLogin(val enabled: Boolean) : SettingsIntent
+    data object ClearCache : SettingsIntent
+}
+
+sealed interface SettingsUiEvent {
+    // 既有：NavigateBack / NavigateToLogin
+    data object CacheCleared : SettingsUiEvent
+    data class ShowError(val message: String) : SettingsUiEvent
+}
+```
+
+##### UI 規範
+
+- 沿用 Material3 `Switch` 與 `TextButton` 風格
+- 分組區塊以 `HorizontalDivider` + 區塊標題（`MaterialTheme.typography.titleMedium`）分隔
+- 每個 Switch 項目使用 `Row` 配置：icon（`Icons.Default.*`）+ 標題 + 描述 + Switch
+- 清除快取以 `AlertDialog` 二次確認
+- 成功 / 失敗訊息以 `Snackbar` 呈現（透過 `SnackbarHostState`）
 
 ---
 

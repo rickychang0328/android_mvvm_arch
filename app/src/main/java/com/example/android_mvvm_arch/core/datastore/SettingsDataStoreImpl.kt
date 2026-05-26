@@ -29,6 +29,10 @@ class SettingsDataStoreImpl @Inject constructor(
             isDarkMode = preferences[IS_DARK_MODE] ?: false,
             language = preferences[LANGUAGE] ?: "zh-TW",
             notificationsEnabled = preferences[NOTIFICATIONS_ENABLED] ?: true,
+            analyticsEnabled = preferences[ANALYTICS_ENABLED] ?: true,
+            crashReportingEnabled = preferences[CRASH_REPORTING_ENABLED] ?: true,
+            personalizedAdsEnabled = preferences[PERSONALIZED_ADS_ENABLED] ?: false,
+            biometricLoginEnabled = preferences[BIOMETRIC_LOGIN_ENABLED] ?: false,
         )
     }
 
@@ -50,9 +54,37 @@ class SettingsDataStoreImpl @Inject constructor(
         }
     }
 
+    override suspend fun updateAnalyticsEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[ANALYTICS_ENABLED] = enabled
+        }
+    }
+
+    override suspend fun updateCrashReportingEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[CRASH_REPORTING_ENABLED] = enabled
+        }
+    }
+
+    override suspend fun updatePersonalizedAdsEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[PERSONALIZED_ADS_ENABLED] = enabled
+        }
+    }
+
+    override suspend fun updateBiometricLoginEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[BIOMETRIC_LOGIN_ENABLED] = enabled
+        }
+    }
+
     private companion object {
         val IS_DARK_MODE = booleanPreferencesKey("is_dark_mode")
         val LANGUAGE = stringPreferencesKey("language")
         val NOTIFICATIONS_ENABLED = booleanPreferencesKey("notifications_enabled")
+        val ANALYTICS_ENABLED = booleanPreferencesKey("analytics_enabled")
+        val CRASH_REPORTING_ENABLED = booleanPreferencesKey("crash_reporting_enabled")
+        val PERSONALIZED_ADS_ENABLED = booleanPreferencesKey("personalized_ads_enabled")
+        val BIOMETRIC_LOGIN_ENABLED = booleanPreferencesKey("biometric_login_enabled")
     }
 }

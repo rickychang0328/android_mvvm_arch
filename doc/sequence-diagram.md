@@ -508,7 +508,61 @@ sequenceDiagram
 
 ---
 
-## 13. Settings 語言切換（UseCase 驗證）
+## 13. 清除快取流程（Privacy Settings）
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant SS as SettingsScreen
+    participant Dialog as AlertDialog
+    participant SVM as SettingsViewModel
+    participant UC as ClearCacheUseCase
+    participant PR as ProfileRepositoryImpl
+    participant DAO as ProfileDao
+    participant Snack as SnackbarHostState
+
+    User->>SS: 點擊「清除快取」
+    SS->>Dialog: showClearCacheDialog = true
+    Dialog-->>User: 顯示 Material3 AlertDialog（確認 / 取消）
+
+    alt 使用者點擊「確認」
+        User->>Dialog: 點擊「確認」
+        Dialog->>SS: showClearCacheDialog = false
+        SS->>SVM: onIntent(ClearCache)
+        activate SVM
+
+        SVM->>UC: invoke()
+        activate UC
+        UC->>PR: clearProfileCache()
+        activate PR
+        PR->>DAO: clear() ← 清除 Profile Room 快取
+        DAO-->>PR: Unit
+        PR-->>UC: Unit
+        deactivate PR
+        UC-->>SVM: Result.success(Unit)
+        deactivate UC
+
+        note over SVM: Token 與 Settings 偏好皆保留<br/>不會觸發登出
+        SVM->>SS: uiEvent emit CacheCleared
+        deactivate SVM
+        SS->>Snack: showSnackbar("已清除本地快取")
+        Snack-->>User: 顯示 Snackbar 提示
+    else 失敗
+        UC-->>SVM: Result.failure(throwable)
+        SVM->>SS: uiEvent emit ShowError("清除快取失敗，請稍後再試。")
+        SS->>Snack: showSnackbar(message)
+        Snack-->>User: 顯示錯誤 Snackbar
+    else 使用者點擊「取消」
+        User->>Dialog: 點擊「取消」
+        Dialog->>SS: showClearCacheDialog = false
+        note over SS: 不發出 Intent，UI 還原為設定頁
+    end
+```
+
+---
+
+## 14. Settings 語言切換（UseCase 驗證）
 
 ```mermaid
 sequenceDiagram
