@@ -61,7 +61,9 @@ import com.example.android_mvvm_arch.feature.notifications.presentation.viewmode
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NotificationsScreen(
+    modifier: Modifier = Modifier,
     onNavigateBack: () -> Unit,
+    showTopBar: Boolean = true,
     viewModel: NotificationsViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -101,35 +103,39 @@ fun NotificationsScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("通知") },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "返回",
-                        )
+            if (showTopBar) {
+                TopAppBar(
+                    title = { Text("通知") },
+                    navigationIcon = {
+                        IconButton(onClick = onNavigateBack) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "返回",
+                            )
+                        }
+                    },
+                    actions = {
+                        IconButton(
+                            onClick = { viewModel.onIntent(NotificationsIntent.MarkAllRead) },
+                            enabled = uiState.unreadCount > 0,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.DoneAll,
+                                contentDescription = "全部標記為已讀",
+                            )
+                        }
                     }
-                },
-                actions = {
-                    IconButton(
-                        onClick = { viewModel.onIntent(NotificationsIntent.MarkAllRead) },
-                        enabled = uiState.unreadCount > 0,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.DoneAll,
-                            contentDescription = "全部標記為已讀",
-                        )
-                    }
-                },
-            )
+                )
+            }
         },
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
     ) { innerPadding ->
         NotificationsContent(
-            modifier = Modifier.padding(innerPadding),
+            modifier = Modifier
+                .then(modifier)
+                .padding(innerPadding),
             lazyPagingItems = lazyPagingItems,
-            onRefresh = lazyPagingItems::refresh,
+            onRefresh = { viewModel.onIntent(NotificationsIntent.Refresh) },
             onRetry = lazyPagingItems::retry,
             onItemClick = { id -> viewModel.onIntent(NotificationsIntent.MarkRead(id)) },
         )

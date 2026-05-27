@@ -5,6 +5,8 @@ import androidx.paging.PagingData
 import androidx.paging.cachedIn
 import androidx.lifecycle.ViewModel
 import com.example.android_mvvm_arch.core.network.ApiException
+import com.example.android_mvvm_arch.core.sync.SyncManager
+import com.example.android_mvvm_arch.core.sync.SyncTarget
 import com.example.android_mvvm_arch.feature.notifications.domain.model.Notification
 import com.example.android_mvvm_arch.feature.notifications.domain.usecase.GetNotificationsPagingUseCase
 import com.example.android_mvvm_arch.feature.notifications.domain.usecase.GetUnreadCountUseCase
@@ -33,6 +35,7 @@ class NotificationsViewModel @Inject constructor(
     private val getUnreadCountUseCase: GetUnreadCountUseCase,
     private val markNotificationReadUseCase: MarkNotificationReadUseCase,
     private val markAllNotificationsReadUseCase: MarkAllNotificationsReadUseCase,
+    private val syncManager: SyncManager,
 ) : ViewModel() {
 
     val pagingDataFlow: Flow<PagingData<Notification>> =
@@ -67,6 +70,7 @@ class NotificationsViewModel @Inject constructor(
 
     private fun emitRefreshList() {
         viewModelScope.launch {
+            syncManager.requestImmediateSync(setOf(SyncTarget.NOTIFICATIONS))
             _uiEvent.emit(NotificationsUiEvent.RefreshList)
         }
     }

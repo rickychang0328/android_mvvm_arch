@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.paging.PagingData
 import androidx.paging.cachedIn
+import com.example.android_mvvm_arch.core.sync.SyncManager
+import com.example.android_mvvm_arch.core.sync.SyncTarget
 import com.example.android_mvvm_arch.feature.home.presentation.state.HomeUiState
 import com.example.android_mvvm_arch.feature.home.presentation.state.QuickAction
 import com.example.android_mvvm_arch.feature.notifications.domain.model.Notification
@@ -23,6 +25,7 @@ import javax.inject.Inject
 class HomeViewModel @Inject constructor(
     private val getUserProfileUseCase: GetUserProfileUseCase,
     getNotificationsPagingUseCase: GetNotificationsPagingUseCase,
+    private val syncManager: SyncManager,
 ) : ViewModel() {
 
     val recentNotificationsPagingDataFlow: Flow<PagingData<Notification>> =
@@ -37,9 +40,9 @@ class HomeViewModel @Inject constructor(
 
     private fun loadDashboard() {
         val actions = listOf(
-            QuickAction("Profile", null, Routes.PROFILE),
-            QuickAction("Settings", null, Routes.SETTINGS),
-            QuickAction("Notifications", null, Routes.NOTIFICATIONS)
+            QuickAction("個人資料", null, Routes.PROFILE),
+            QuickAction("設定", null, Routes.SETTINGS),
+            QuickAction("通知", null, Routes.NOTIFICATIONS)
         )
         _uiState.update { it.copy(quickActions = actions) }
 
@@ -57,10 +60,7 @@ class HomeViewModel @Inject constructor(
             }
         }
 
-        // Refresh profile data
-        viewModelScope.launch {
-            getUserProfileUseCase.refresh()
-        }
+        syncManager.requestImmediateSync(setOf(SyncTarget.PROFILE, SyncTarget.NOTIFICATIONS))
     }
     
     fun onRefresh() {
@@ -71,23 +71,13 @@ class HomeViewModel @Inject constructor(
                     error = null,
                 )
             }
-            getUserProfileUseCase.refresh()
-                .onSuccess {
-                    _uiState.update { state ->
-                        state.copy(
-                            isLoading = false,
-                            error = null,
-                        )
-                    }
-                }
-                .onFailure { error ->
-                    _uiState.update { state ->
-                        state.copy(
-                            isLoading = false,
-                            error = error.message ?: "更新首頁資料失敗，請稍後再試。",
-                        )
-                    }
-                }
+            syncManager.requestImmediateSync(setOf(SyncTarget.PROFILE))
+            _uiState.update { state ->
+                state.copy(
+                    isLoading = false,
+                    error = null,
+                )
+            }
         }
     }
 }

@@ -1,20 +1,21 @@
 ## Android MVVM Architecture Sample
 
-以 Clean Architecture + MVVM + MVI 範例實作 Auth / Profile / Settings / Notifications，並新增 HomeDashboard 主頁。所有網路呼叫由 `MockApiInterceptor` 本地模擬，可離線開發。
+以 Clean Architecture + MVVM + MVI 範例實作 Auth / Profile / Settings / Notifications，並新增 HomeDashboard + Drawer 主導航。所有網路呼叫由 `MockApiInterceptor` 本地模擬，可離線開發。
 
 ### 主要功能
-- **HomeDashboard**：歡迎詞 + 使用者資料摘要 + 快速動作（Profile / Settings / Notifications）+ 近期通知分頁卡片列表（重用 Notifications Paging 3）。支援初次載入、append 載入、錯誤重試、手動刷新與下拉 refresh。
+- **HomeDashboard + Drawer**：登入後以 `ModalNavigationDrawer` 作為主殼層，統一切換 Home / Profile / Settings / Notifications；Dashboard 快速動作與 Drawer 共用同一套路由切換邏輯。
 - **Auth**：登入、註冊、忘記/重設密碼流程；成功後導向 `Routes.HOME`。
 - **Profile**：檢視與編輯個人資料，Room 快取 + Mock API 刷新。
 - **Settings**：深色模式、語言切換、通知開關及隱私偏好皆寫入 DataStore (`app_settings`)；變更即時套用全域 Theme。
-- **Notifications**：採 Paging 3（Compose `LazyPagingItems`）列表、下拉刷新、單筆/全部設已讀；未讀徽章，並透過 `NotificationSyncWorker` (15 分鐘) 依 `notificationsEnabled` 同步與推播。
+- **Notifications**：採 Paging 3（Compose `LazyPagingItems`）列表、下拉刷新、單筆/全部設已讀；未讀徽章，並整合至 `SyncManager + WorkManager` 統一同步框架。
+- **Offline-First Sync**：新增 `core/sync/`，以 `SyncManager` 統一管理 `PROFILE`、`NOTIFICATIONS` 週期/即時同步，支援網路約束、指數退避、Settings 條件過濾。
 
 ### 技術與依賴
 - Kotlin 2.2.x、AGP 9.2.x、Gradle 9.4.x、KSP
 - Jetpack Compose (Material3、Navigation)、Hilt、Coroutines
 - Retrofit + OkHttp + Moshi
 - Room、DataStore Preferences
-- WorkManager + Hilt Worker（背景通知同步）
+- WorkManager + Hilt Worker（Offline-first 週期/即時同步）
 
 ### 建置與執行
 ```bash
@@ -44,10 +45,18 @@
 
 ### 設定、通知與背景工作
 - DataStore (`SettingsDataStore`) 儲存主題、語言、通知開關與隱私偏好；HomeDashboard、Profile、Notifications 均跟隨其狀態。
-- `NotificationSyncWorker` 每 15 分鐘輪詢通知，受 `notificationsEnabled` 影響；若關閉通知則 Worker 直接結束且不推播。
+- `SyncWorker` 由 `SyncManager` 協調同步（`Periodic + OneTime`），並使用 `NetworkType.CONNECTED` + Exponential Backoff。
+- 觸發時機統一：App 啟動註冊週期同步、App 回前景補即時同步、登入成功與手動刷新皆透過 `SyncManager` 入口觸發。
+- `notificationsEnabled = false` 時會跳過 `NOTIFICATIONS` target；既有 `NotificationSyncWorker` 保留系統通知顯示邏輯，資料同步改委派 `SyncManager`。
 - Notifications 模組提供 `GetUnreadCountUseCase` 可給 HomeDashboard 或 Profile Badge 使用。
 
 ### 導航路由
 - `home`（啟動頁，登入後導向）
 - `login` / `register` / `forgot_password` / `reset_password`
 - `profile` / `settings` / `notifications`
+
+### 設計文件
+- 主 SDD：`doc/SDD.md`
+- Drawer 專用 SDD：`doc/SDD-DrawerNavigation.md`
+- 類別圖：`doc/class-diagram.md`
+- 循序圖：`doc/sequence-diagram.md`

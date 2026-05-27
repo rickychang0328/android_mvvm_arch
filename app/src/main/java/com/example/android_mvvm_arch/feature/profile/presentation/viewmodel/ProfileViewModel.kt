@@ -3,6 +3,8 @@ package com.example.android_mvvm_arch.feature.profile.presentation.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.android_mvvm_arch.core.network.ApiException
+import com.example.android_mvvm_arch.core.sync.SyncManager
+import com.example.android_mvvm_arch.core.sync.SyncTarget
 import com.example.android_mvvm_arch.feature.auth.domain.usecase.LogoutUseCase
 import com.example.android_mvvm_arch.feature.notifications.domain.usecase.GetUnreadCountUseCase
 import com.example.android_mvvm_arch.feature.profile.domain.usecase.GetUserProfileUseCase
@@ -29,6 +31,7 @@ class ProfileViewModel @Inject constructor(
     private val uploadAvatarUseCase: UploadAvatarUseCase,
     private val logoutUseCase: LogoutUseCase,
     private val getUnreadCountUseCase: GetUnreadCountUseCase,
+    private val syncManager: SyncManager,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ProfileUiState())
@@ -95,17 +98,17 @@ class ProfileViewModel @Inject constructor(
     private fun refreshProfile() {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
-            getUserProfileUseCase.refresh()
-                .onFailure { error ->
-                    val message = when (error) {
-                        is ApiException -> error.message
-                        else -> "Failed to load profile."
-                    }
-                    _uiState.update { it.copy(isLoading = false, errorMessage = message) }
+            val syncResult = syncManager.runSync(setOf(SyncTarget.PROFILE))
+            val error = syncResult.failed[SyncTarget.PROFILE]
+            if (error != null) {
+                val message = when (error) {
+                    is ApiException -> error.message
+                    else -> "Failed to load profile."
                 }
-                .onSuccess {
-                    _uiState.update { it.copy(isLoading = false) }
-                }
+                _uiState.update { it.copy(isLoading = false, errorMessage = message) }
+            } else {
+                _uiState.update { it.copy(isLoading = false) }
+            }
         }
     }
 

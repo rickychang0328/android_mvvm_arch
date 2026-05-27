@@ -27,18 +27,19 @@
    - 6.2 [Profile 個人資料功能](#62-profile-個人資料功能)
    - 6.3 [Settings 設定功能](#63-settings-設定功能)
    - 6.4 [Notifications 通知功能](#64-notifications-通知功能)
-- 6.5 [HomeDashboard 主頁功能](#65-homedashboard-主頁功能)
+   - 6.5 [HomeDashboard 主頁功能](#65-homedashboard-主頁功能)
    - 6.6 [Paging 3 列表模板](#66-paging-3-列表模板)
 7. [安全設計（DLP）](#7-安全設計dlp)
 8. [錯誤處理策略](#8-錯誤處理策略)
 9. [導航設計](#9-導航設計)
 10. [測試策略](#10-測試策略)
+11. [Offline-First Sync Strategy（SyncManager + WorkManager）](#11-offline-first-sync-strategysyncmanager--workmanager)
 
 ---
 
 ## 1. 專案概述
 
-本專案為 Android 行動應用程式，示範以 **Clean Architecture** 搭配 **MVVM + MVI** 風格實作「登入 / 登出」、「個人資料檢視 / 編輯」與「應用程式設定（深色模式、語言、通知）」三大功能模組。所有網路呼叫透過 `MockApiInterceptor` 於本地模擬，可無需後端即獨立運行。
+本專案為 Android 行動應用程式，示範以 **Clean Architecture** 搭配 **MVVM + MVI** 風格實作「登入 / 登出」、「Home Dashboard + Drawer 主導航」、「個人資料檢視 / 編輯」與「應用程式設定（深色模式、語言、通知）」等功能模組。所有網路呼叫透過 `MockApiInterceptor` 於本地模擬，可無需後端即獨立運行。
 
 ### 核心目標
 
@@ -48,6 +49,13 @@
 | **可維護性** | 功能依 feature 分包，各層職責明確 |
 | **安全性** | Token 加密儲存，敏感資料不寫入 Log（DLP） |
 | **可擴充性** | Domain 層不依賴 Android，可直接移植至多平台 |
+
+### 開發者閱讀路徑
+
+1. 先讀 `doc/SDD.md` 的章節 6（功能）與章節 9（導航）。
+2. 再讀 `doc/sequence-diagram.md` 對應流程，掌握操作時序。
+3. 接著讀 `doc/class-diagram.md` 對應章節，掌握類別責任與依賴。
+4. 最後對照 `app/src/main/java/com/example/android_mvvm_arch/navigation` 與各 `feature/*/presentation/ui` 進行實作。
 
 ---
 
@@ -791,12 +799,12 @@ class AndroidMvvmArchApplication : Application(), Configuration.Provider {
 
 #### 使用者故事
 
-> 登入成功後抵達 Home Dashboard，看到歡迎詞與基本資料摘要，並可透過快速動作前往 Profile / Settings / Notifications 或觸發資料刷新。
+> 登入成功後進入 Home Dashboard（Main Shell），可透過 Drawer 導航切換 Home / Profile / Settings / Notifications；Dashboard 快速動作改為觸發同一套 Drawer 導航目的地，避免多套路由分流。
 
 #### UI 與互動
 
 - **歡迎卡片**：顯示 `displayName`、`email`，背景採用當前 Theme（深/淺色、語言由 Settings DataStore 決定，Home 自動套用）。
-- **快速動作（Quick Actions）**：維持 2 欄佈局，預設三個入口：Profile、Settings、Notifications（路由為 `Routes.PROFILE / SETTINGS / NOTIFICATIONS`）。
+- **快速動作（Quick Actions）**：維持 2 欄佈局，預設三個入口：個人資料、設定、通知；點擊後走與 Drawer 相同的主導航切換邏輯（單一導航入口）。
 - **近期通知分頁列表（Paging 3）**：重用 Notifications Domain 的 `GetNotificationsPagingUseCase`，在 Home 以卡片形式呈現近期通知摘要（標題、內容、相對時間、通知類型、未讀點）。
 - **刷新行為**：Home 採 `PullToRefreshBox`；一次 refresh 會同時觸發 `HomeViewModel.onRefresh()`（Profile 同步）與 `LazyPagingItems.refresh()`（通知分頁重載）。
 - **錯誤與重試**：支援 `refresh` 初次載入錯誤重試、`append` 載入更多錯誤重試，以及手動「刷新」按鈕。
@@ -824,7 +832,7 @@ data class QuickAction(
 
 ```
 HomeViewModel.init
-  ├─► quickActions = [Profile, Settings, Notifications]
+  ├─► quickActions = [個人資料, 設定, 通知]
   ├─► collect GetUserProfileUseCase.observeProfile()
   │       └─► _uiState.userProfile 更新 → HomeContent 歡迎卡渲染
   ├─► launch getUserProfileUseCase.refresh()（首次同步 Profile）
@@ -842,6 +850,11 @@ HomeScreen (PullToRefresh / 手動刷新)
        1) viewModel.onRefresh()
        2) lazyPagingItems.refresh()
            └─ refresh/append loadState 決定 loading/error/retry UI
+
+HomeScreen (QuickAction 點擊)
+  └─► onNavigateToRoute(route)
+       └─ AppNavGraph.navigateToMainDestination(route)
+            └─ 與 Drawer item click 共用（HOME/PROFILE/SETTINGS/NOTIFICATIONS）
 ```
 
 資料來源沿用 Mock API（`MockApiInterceptor`）+ Room 快取，無需真實後端即可展示 Dashboard。
@@ -850,11 +863,11 @@ HomeScreen (PullToRefresh / 手動刷新)
 
 | 模組 | 整合點 |
 |------|--------|
-| Auth | `MainViewModel` 依 `IsLoggedInUseCase` 決定啟動路由；Login / Register 成功後以 `NavController` popUpTo root 導向 `Routes.HOME`。 |
+| Auth | `MainViewModel` 依 `IsLoggedInUseCase` 決定啟動路由；Login / Register 成功後 `popUpTo(Routes.AUTH_GRAPH)` 進入 `Routes.MAIN_GRAPH`（起始頁 `Routes.HOME`）。 |
 | Profile | `GetUserProfileUseCase.observeProfile()` 提供 `UserProfile` Flow；`refresh()` 觸發 Repository 拉取並寫入 Room，Home 歡迎卡即時更新。 |
 | Settings（DataStore） | Home 不直接寫入 DataStore，但 Theme / 語言 / `notificationsEnabled` 由 `SettingsDataStore` 決定並全域套用；快速動作連至 Settings 供使用者調整偏好。 |
 | Notifications | 快速動作導向 `NotificationsScreen`；未讀資料由 `NotificationsRepository` + `NotificationSyncWorker`（15 分鐘輪詢，受 `notificationsEnabled` 影響）維持最新，Home 可訂閱 `GetUnreadCountUseCase` 作為摘要徽章或卡片。 |
-| Navigation | 新增 `Routes.HOME` 節點於 `AppNavGraph`，與其他頁一致使用 `NavHost` + `hiltViewModel` 注入。 |
+| Navigation | `AppNavGraph` 採 `AUTH_GRAPH` + `MAIN_GRAPH` 巢狀結構；`MAIN_GRAPH` 由 `ModalNavigationDrawer` + 共用 TopAppBar 包裹，統一主導航與標題。 |
 
 ---
 
@@ -937,7 +950,11 @@ onFailure { error ->
 ### 路由定義
 
 ```
+Routes.AUTH_GRAPH      = "auth_graph"
+Routes.MAIN_GRAPH      = "main_graph"
+
 Routes.LOGIN           = "login"
+Routes.HOME            = "home"
 Routes.REGISTER        = "register"
 Routes.FORGOT_PASSWORD = "forgot_password"
 Routes.RESET_PASSWORD  = "reset_password"
@@ -951,36 +968,39 @@ Routes.NOTIFICATIONS   = "notifications"
 ```
 App 啟動
   └─► IsLoggedInUseCase.invoke()
-        ├─ true  → startDestination = "profile"
+        ├─ true  → startDestination = "home"
         └─ false → startDestination = "login"
 ```
 
 ### 導航流程
 
 ```
-LoginScreen ─── 登入成功 ──► ProfileScreen
-                              (popUpTo login, inclusive=true)
+LoginScreen / RegisterScreen ─ 登入成功 ─► MainGraph(Home)
+                                        (popUpTo auth_graph, inclusive=true)
 
-ProfileScreen ─ 設定按鈕 ──► SettingsScreen
-                              (push)
+MainGraph (Drawer + TopAppBar)
+  ├─ DrawerItem(Home)          ─► HomeScreen
+  ├─ DrawerItem(Profile)       ─► ProfileScreen
+  ├─ DrawerItem(Settings)      ─► SettingsScreen
+  └─ DrawerItem(Notifications) ─► NotificationsScreen
 
-ProfileScreen ─ 通知鈴鐺（Badge）──► NotificationsScreen
-                              (push)
+HomeScreen ─ QuickAction(Profile/Settings/Notifications)
+          ─► 與 Drawer 共用 navigateToMainDestination(route)
 
-SettingsScreen / NotificationsScreen ─ 返回 ──────► ProfileScreen
-                              (popBackStack)
-
-System Notification ─ 點擊 ──► MainActivity (deep link "notifications") ──► NotificationsScreen
-                              (launchSingleTop)
+System Notification ─ 點擊 ──► MainActivity (deep link "notifications")
+                              └─► NavController.navigate(Routes.NOTIFICATIONS)
+                                   (Drawer 自動高亮 Notifications)
 
 ProfileScreen / SettingsScreen ─ 登出 ──► LoginScreen
-                              (popUpTo root, inclusive=true)
+                              (popUpTo main_graph, inclusive=true)
 ```
 
 ### 底層實作
 
 - 使用 Jetpack Navigation Compose（`NavHost` / `composable`）
-- `AppNavGraph` 統一管理路由，由 `MainActivity` 持有
+- 使用 `navigation(...)` 建立 `AUTH_GRAPH` 與 `MAIN_GRAPH` 巢狀圖
+- `MAIN_GRAPH` 外層以 `ModalNavigationDrawer` + 共用 TopAppBar 統一導覽
+- `AppNavGraph` 統一管理路由，由 `MainActivity` 持有 `NavController`
 - `hiltViewModel()` 在 NavGraph 內自動注入 ViewModel
 
 ---
@@ -1024,3 +1044,57 @@ ProfileScreen / SettingsScreen ─ 登出 ──► LoginScreen
 ./gradlew :app:testDebugUnitTest --continue
 # 報告位置：app/build/reports/tests/testDebugUnitTest/index.html
 ```
+
+---
+
+## 11. Offline-First Sync Strategy（SyncManager + WorkManager）
+
+### 11.1 設計目標
+
+- 建立單一同步協調入口 `SyncManager`，統一 Profile 與 Notifications 同步流程。
+- 將同步執行收斂至 WorkManager（`Periodic + OneTime`），避免各功能分散調度。
+- 保持 Offline-first 原則：UI 一律讀本地（Room / DataStore），同步僅負責遠端抓取後回寫本地。
+
+### 11.2 核心元件
+
+| 元件 | 職責 |
+|------|------|
+| `SyncTarget` | 宣告可擴充同步目標（目前 `PROFILE`、`NOTIFICATIONS`） |
+| `SyncResult` | 彙整成功/失敗/跳過 target 與是否建議重試 |
+| `SyncManager` | 對外提供週期排程、即時同步請求、實際同步執行 |
+| `SyncManagerImpl` | 整合 `GetUserProfileUseCase`、`RefreshNotificationsUseCase`、`SettingsDataStore`、`IsLoggedInUseCase` |
+| `SyncWorker` | WorkManager 主協調 Worker，解析 targets 後委派 `SyncManager.runSync()` |
+
+### 11.3 排程與重試策略
+
+- 週期同步：`PeriodicWorkRequest<SyncWorker>`，15 分鐘，`ExistingPeriodicWorkPolicy.KEEP`。
+- 即時同步：`OneTimeWorkRequest<SyncWorker>`，`ExistingWorkPolicy.APPEND_OR_REPLACE`，可由登入成功、前景喚醒、手動刷新觸發。
+- 網路限制：`Constraints(requiredNetworkType = NetworkType.CONNECTED)`。
+- Backoff：`BackoffPolicy.EXPONENTIAL`（30 秒起跳）。
+- Retry 邏輯：
+  - `SyncManager` 針對可重試錯誤（`IOException`、`ApiException.code >= 500`）標記 `shouldRetry = true`。
+  - `SyncWorker` 在 `runAttemptCount < 3` 時回傳 `Result.retry()`，否則 `Result.success()` 等下次週期。
+
+### 11.4 觸發點整合
+
+| 場景 | 同步入口 |
+|------|---------|
+| App 啟動 | `AndroidMvvmArchApplication.onCreate()` 呼叫 `syncManager.schedulePeriodicSync()` |
+| App 回前景 | `MainActivity.onStart()` 呼叫 `syncManager.requestImmediateSync()` |
+| 登入成功 | `LoginViewModel` 呼叫 `requestImmediateSync(PROFILE + NOTIFICATIONS)` |
+| Profile 手動刷新 | `ProfileViewModel` 呼叫 `runSync(PROFILE)` |
+| Notifications 手動刷新 | `NotificationsViewModel` 呼叫 `requestImmediateSync(NOTIFICATIONS)`，並觸發列表 refresh |
+
+### 11.5 與 Settings / Notifications 整合
+
+- `SyncManagerImpl` 會讀取 `SettingsDataStore.notificationsEnabled`：
+  - `false`：將 `NOTIFICATIONS` 標記為 skipped（不打 API）。
+  - `true`：正常執行通知同步。
+- 既有 `NotificationSyncWorker` 保留「新未讀通知比對 + 系統通知顯示」能力；
+  實際資料同步改委派 `SyncManager.runSync(NOTIFICATIONS)`，降低搬遷風險。
+
+### 11.6 Offline-First 行為保證
+
+- ViewModel / UI 不直接依賴遠端 API 結果顯示資料，仍以本地 Flow 為主。
+- 同步失敗不會清空 Room 快取，使用者可持續瀏覽既有資料。
+- 錯誤以 UI event / Snackbar 呈現，不阻斷既有本地瀏覽與操作流程。

@@ -3,6 +3,8 @@ package com.example.android_mvvm_arch.feature.auth.presentation.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.android_mvvm_arch.core.network.ApiException
+import com.example.android_mvvm_arch.core.sync.SyncManager
+import com.example.android_mvvm_arch.core.sync.SyncTarget
 import com.example.android_mvvm_arch.feature.auth.domain.usecase.LoginUseCase
 import com.example.android_mvvm_arch.feature.auth.presentation.state.LoginIntent
 import com.example.android_mvvm_arch.feature.auth.presentation.state.LoginUiEvent
@@ -21,6 +23,7 @@ import javax.inject.Inject
 @HiltViewModel
 class LoginViewModel @Inject constructor(
     private val loginUseCase: LoginUseCase,
+    private val syncManager: SyncManager,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(LoginUiState())
@@ -50,6 +53,12 @@ class LoginViewModel @Inject constructor(
             loginUseCase(state.email, state.password)
                 .onSuccess {
                     _uiState.update { it.copy(isLoading = false) }
+                    syncManager.requestImmediateSync(
+                        setOf(
+                            SyncTarget.PROFILE,
+                            SyncTarget.NOTIFICATIONS,
+                        ),
+                    )
                     _uiEvent.emit(LoginUiEvent.NavigateToHome)
                 }
                 .onFailure { error ->

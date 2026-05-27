@@ -23,6 +23,7 @@ import androidx.navigation.compose.rememberNavController
 import com.example.android_mvvm_arch.core.datastore.AppSettings
 import com.example.android_mvvm_arch.core.datastore.SettingsDataStore
 import com.example.android_mvvm_arch.core.notification.NotificationHelper
+import com.example.android_mvvm_arch.core.sync.SyncManager
 import com.example.android_mvvm_arch.navigation.AppNavGraph
 import com.example.android_mvvm_arch.navigation.Routes
 import com.example.android_mvvm_arch.presentation.MainViewModel
@@ -36,6 +37,9 @@ class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var settingsDataStore: SettingsDataStore
+
+    @Inject
+    lateinit var syncManager: SyncManager
 
     private val pendingDeepLink = MutableStateFlow<String?>(null)
 
@@ -98,6 +102,12 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         consumeDeepLink(intent)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // App 回到前景時以一致入口補一次即時同步（實際執行由 Worker + constraints 管理）。
+        syncManager.requestImmediateSync()
     }
 
     private fun consumeDeepLink(intent: Intent?) {

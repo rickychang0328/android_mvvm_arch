@@ -1017,3 +1017,138 @@ sequenceDiagram
     end
     deactivate HVM
 ```
+
+---
+
+## 24. App 啟動與前景喚醒同步流程（SyncManager）
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant App as AndroidMvvmArchApplication
+    participant SM as SyncManager
+    participant WM as WorkManager
+    participant MA as MainActivity
+
+    App->>SM: schedulePeriodicSync()
+    SM->>WM: enqueueUniquePeriodicWork("app_periodic_sync", KEEP, SyncWorker)
+
+    note over MA: 使用者切回前景（onStart）
+    MA->>SM: requestImmediateSync(PROFILE + NOTIFICATIONS)
+    SM->>WM: enqueueUniqueWork("app_immediate_sync", APPEND_OR_REPLACE, SyncWorker)
+```
+
+---
+
+## 25. 手動觸發同步流程（Profile / Notifications）
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant PVM as ProfileViewModel
+    participant NVM as NotificationsViewModel
+    participant SM as SyncManager
+    participant WM as WorkManager
+    participant UI as Compose UI
+
+    alt Profile 手動刷新
+        User->>PVM: onIntent(ProfileIntent.Refresh)
+        PVM->>SM: runSync(PROFILE)
+        SM-->>PVM: SyncResult(success/failed)
+        PVM-->>UI: 更新 loading / errorMessage
+    else Notifications 下拉刷新
+        User->>NVM: onIntent(NotificationsIntent.Refresh)
+        NVM->>SM: requestImmediateSync(NOTIFICATIONS)
+        SM->>WM: enqueueUniqueWork("app_immediate_sync", APPEND_OR_REPLACE, SyncWorker)
+        NVM-->>UI: emit RefreshList（觸發 Paging refresh）
+    end
+```
+
+---
+
+## 26. SyncWorker 執行同步流程（含 Settings 條件）
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant WM as WorkManager
+    participant SW as SyncWorker
+    participant SM as SyncManagerImpl
+    participant DS as SettingsDataStore
+    participant PUC as GetUserProfileUseCase
+    participant NUC as RefreshNotificationsUseCase
+
+    WM->>SW: doWork(inputData.targets)
+    SW->>SW: parseTargets()
+    SW->>SM: runSync(targets)
+    SM->>SM: isLoggedInUseCase()
+
+    alt 未登入
+        SM-->>SW: SyncResult(skipped all, shouldRetry=false)
+        SW-->>WM: Result.success()
+    else 已登入
+        SM->>DS: settingsFlow.first().notificationsEnabled
+        alt notificationsEnabled=false
+            SM->>SM: skip NOTIFICATIONS target
+        end
+        opt 包含 PROFILE
+            SM->>PUC: refresh()
+        end
+        opt 包含 NOTIFICATIONS 且啟用
+            SM->>NUC: invoke()
+        end
+        SM-->>SW: SyncResult(succeeded/failed/shouldRetry)
+        alt shouldRetry && runAttemptCount < 3
+            SW-->>WM: Result.retry()
+        else
+            SW-->>WM: Result.success()
+        end
+    end
+```
+
+---
+
+## 27. 登入後 Drawer 導航與 Dashboard 入口整合
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant MA as MainActivity
+    participant MVM as MainViewModel
+    participant Nav as AppNavGraph
+    participant Drawer as ModalNavigationDrawer
+    participant Home as HomeScreen
+    participant Profile as ProfileScreen
+    participant Settings as SettingsScreen
+    participant Noti as NotificationsScreen
+
+    User->>MA: 啟動 App
+    MA->>MVM: collect startDestination
+    MVM-->>MA: "home" (已登入)
+    MA->>Nav: AppNavGraph(startDestination="home")
+    Nav-->>Drawer: 顯示 MAIN_GRAPH 主殼層
+
+    User->>Drawer: 點擊 Drawer Profile
+    Drawer->>Nav: navigateToMainDestination("profile")
+    Nav-->>Profile: 顯示個人資料頁
+
+    User->>Drawer: 點擊 Drawer Settings
+    Drawer->>Nav: navigateToMainDestination("settings")
+    Nav-->>Settings: 顯示設定頁
+
+    User->>Drawer: 點擊 Drawer Home
+    Drawer->>Nav: navigateToMainDestination("home")
+    Nav-->>Home: 回到 Dashboard
+
+    User->>Home: 點擊 QuickAction 通知
+    Home->>Nav: onNavigateToRoute("notifications")
+    Nav->>Nav: navigateToMainDestination("notifications")
+    Nav-->>Noti: 顯示通知頁（與 Drawer 同路徑）
+
+    User->>Profile: 點擊登出
+    Profile->>Nav: onNavigateToLogin()
+    Nav-->>MA: navigate("login", popUpTo main_graph inclusive)
+    MA-->>User: 回到 Auth 區（無主區殘留返回堆疊）
+```

@@ -1207,3 +1207,154 @@ classDiagram
     GetNotificationsPagingUseCase --> NotificationsRepository
     NotificationsRepository --> NotificationsPagingSource
 ```
+
+---
+
+## 9. Offline-First Sync 類別圖
+
+```mermaid
+classDiagram
+    direction LR
+
+    class SyncTarget {
+        <<enum>>
+        PROFILE
+        NOTIFICATIONS
+    }
+
+    class SyncResult {
+        +succeeded: Set~SyncTarget~
+        +failed: Map~SyncTarget, Throwable~
+        +skipped: Set~SyncTarget~
+        +shouldRetry: Boolean
+        +isSuccess: Boolean
+    }
+
+    class SyncManager {
+        <<interface>>
+        +schedulePeriodicSync()
+        +requestImmediateSync(targets: Set~SyncTarget~)
+        +runSync(targets: Set~SyncTarget~) SyncResult
+    }
+
+    class SyncManagerImpl {
+        -workManager: WorkManager
+        -getUserProfileUseCase: GetUserProfileUseCase
+        -refreshNotificationsUseCase: RefreshNotificationsUseCase
+        -settingsDataStore: SettingsDataStore
+        -isLoggedInUseCase: IsLoggedInUseCase
+        +schedulePeriodicSync()
+        +requestImmediateSync(targets)
+        +runSync(targets) SyncResult
+    }
+
+    class SyncWorker {
+        <<HiltWorker>>
+        +doWork() Result
+        +enqueuePeriodic(workManager)$
+        +enqueueImmediate(workManager, targets)$
+        +parseTargets(data)$ Set~SyncTarget~
+    }
+
+    class NotificationSyncWorker {
+        <<HiltWorker>>
+        -syncManager: SyncManager
+        -getNotificationsUseCase: GetNotificationsUseCase
+        -notificationHelper: NotificationHelper
+        +doWork() Result
+    }
+
+    class AndroidMvvmArchApplication {
+        -syncManager: SyncManager
+        +onCreate()
+    }
+
+    class MainActivity {
+        -syncManager: SyncManager
+        +onStart()
+    }
+
+    class LoginViewModel {
+        -syncManager: SyncManager
+    }
+
+    class ProfileViewModel {
+        -syncManager: SyncManager
+    }
+
+    class NotificationsViewModel {
+        -syncManager: SyncManager
+    }
+
+    SyncManagerImpl ..|> SyncManager
+    SyncManagerImpl --> SyncWorker : enqueue requests
+    SyncWorker --> SyncManager : runSync()
+    SyncManagerImpl --> SyncTarget
+    SyncManagerImpl --> SyncResult
+    NotificationSyncWorker --> SyncManager : runSync(NOTIFICATIONS)
+    AndroidMvvmArchApplication --> SyncManager : schedulePeriodicSync()
+    MainActivity --> SyncManager : requestImmediateSync()
+    LoginViewModel --> SyncManager : requestImmediateSync()
+    ProfileViewModel --> SyncManager : runSync(PROFILE)
+    NotificationsViewModel --> SyncManager : requestImmediateSync(NOTIFICATIONS)
+```
+
+---
+
+## 10. Drawer 主導航類別圖
+
+```mermaid
+classDiagram
+    direction LR
+
+    class Routes {
+        +AUTH_GRAPH: String
+        +MAIN_GRAPH: String
+        +mainDestinations: Set~String~
+        +titleForRoute(route: String?): String
+    }
+
+    class MainDrawerDestination {
+        +route: String
+        +label: String
+        +icon: ImageVector
+    }
+
+    class AppNavGraph {
+        +startDestination: String
+        +navController: NavHostController
+        +navigateToMainDestination(route: String)
+    }
+
+    class HomeScreen {
+        +showTopBar: Boolean
+        +onNavigateToRoute(route: String)
+    }
+
+    class ProfileScreen {
+        +showTopBar: Boolean
+        +onNavigateToLogin()
+    }
+
+    class SettingsScreen {
+        +showTopBar: Boolean
+        +onNavigateToLogin()
+    }
+
+    class NotificationsScreen {
+        +showTopBar: Boolean
+    }
+
+    class MainActivity {
+        +onCreate()
+        +pendingDeepLink: MutableStateFlow~String?~
+    }
+
+    MainActivity --> AppNavGraph : 持有 NavController
+    AppNavGraph --> Routes : 讀取 route/標題
+    AppNavGraph --> MainDrawerDestination : Drawer 項目來源
+    AppNavGraph --> HomeScreen : composable(HOME)
+    AppNavGraph --> ProfileScreen : composable(PROFILE)
+    AppNavGraph --> SettingsScreen : composable(SETTINGS)
+    AppNavGraph --> NotificationsScreen : composable(NOTIFICATIONS)
+```

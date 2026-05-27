@@ -7,47 +7,48 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import com.example.android_mvvm_arch.core.datastore.SettingsDataStore
+import com.example.android_mvvm_arch.core.sync.SyncManager
+import com.example.android_mvvm_arch.core.sync.SyncTarget
 import com.example.android_mvvm_arch.feature.notifications.domain.model.Notification
 import com.example.android_mvvm_arch.feature.notifications.domain.usecase.GetNotificationsUseCase
-import com.example.android_mvvm_arch.feature.notifications.domain.usecase.RefreshNotificationsUseCase
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.flow.first
 import java.util.concurrent.TimeUnit
 
 /**
- * 每 15 分鐘背景拉取最新通知，並針對「未讀新通知」彈出系統通知。
+ * 每 15 分鐘背景檢查通知，並針對「未讀新通知」彈出系統通知。
  *
- * - Hilt + WorkManager：使用 [HiltWorker] + [AssistedInject]，由 `HiltWorkerFactory` 注入。
- * - 尊重使用者偏好：若 `SettingsDataStore.notificationsEnabled == false`，直接 `Result.success()` 跳過。
- * - 失敗策略：API 失敗回傳 [Result.retry]，由 WorkManager 套用指數退避。
+ * - 同步資料來源已委派至 [SyncManager]，此 Worker 保留「新通知偵測 + 系統通知」能力。
+ * - 若 `NOTIFICATIONS` 目標被設定關閉（例如 notificationsEnabled = false），同步結果會標記 skipped。
+ * - 失敗策略：可重試錯誤回傳 [Result.retry]，由 WorkManager 套用退避策略。
  */
 @HiltWorker
 class NotificationSyncWorker @AssistedInject constructor(
     @Assisted appContext: Context,
     @Assisted workerParams: WorkerParameters,
-    private val refreshNotificationsUseCase: RefreshNotificationsUseCase,
+    private val syncManager: SyncManager,
     private val getNotificationsUseCase: GetNotificationsUseCase,
-    private val settingsDataStore: SettingsDataStore,
     private val notificationHelper: NotificationHelper,
 ) : CoroutineWorker(appContext, workerParams) {
 
     override suspend fun doWork(): Result {
-        val notificationsEnabled = settingsDataStore.settingsFlow.first().notificationsEnabled
-        if (!notificationsEnabled) {
-            return Result.success()
-        }
-
         val previousUnreadIds: Set<String> = getNotificationsUseCase()
             .first()
             .filter { !it.isRead }
             .map(Notification::id)
             .toSet()
 
-        val refreshResult = refreshNotificationsUseCase()
-        if (refreshResult.isFailure) {
-            return if (runAttemptCount < MAX_RETRY_COUNT) Result.retry() else Result.success()
+        val syncResult = syncManager.runSync(setOf(SyncTarget.NOTIFICATIONS))
+        if (syncResult.failed.isNotEmpty()) {
+            return if (syncResult.shouldRetry && runAttemptCount < MAX_RETRY_COUNT) {
+                Result.retry()
+            } else {
+                Result.success()
+            }
+        }
+        if (SyncTarget.NOTIFICATIONS !in syncResult.succeeded) {
+            return Result.success()
         }
 
         val latestUnread = getNotificationsUseCase()
