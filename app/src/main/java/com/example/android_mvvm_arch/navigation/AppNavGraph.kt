@@ -45,21 +45,11 @@ fun AppNavGraph(
     val scope = rememberCoroutineScope()
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = currentBackStackEntry?.destination?.route
-    val inMainArea = currentRoute in Routes.mainDestinations
-    val graphStartDestination = if (startDestination == Routes.LOGIN) {
-        Routes.AUTH_GRAPH
-    } else {
-        Routes.MAIN_GRAPH
-    }
+    val inMainArea = AppNavigationPolicy.isMainAreaRoute(currentRoute)
+    val graphStartDestination = AppNavigationPolicy.graphStartDestination(startDestination)
 
     val navigateToMainDestination: (String) -> Unit = { route ->
-        navController.navigate(route) {
-            popUpTo(Routes.HOME) {
-                saveState = true
-            }
-            launchSingleTop = true
-            restoreState = true
-        }
+        navController.navigateWithRequest(AppNavigationPolicy.mainAreaDestination(route))
     }
 
     ModalNavigationDrawer(
@@ -114,10 +104,7 @@ fun AppNavGraph(
                     composable(Routes.LOGIN) {
                         LoginScreen(
                             onNavigateToHome = {
-                                navController.navigate(Routes.HOME) {
-                                    popUpTo(Routes.AUTH_GRAPH) { inclusive = true }
-                                    launchSingleTop = true
-                                }
+                                navController.navigateWithRequest(AppNavigationPolicy.authSuccessDestination())
                             },
                             onNavigateToRegister = {
                                 navController.navigate(Routes.REGISTER)
@@ -130,10 +117,7 @@ fun AppNavGraph(
                     composable(Routes.REGISTER) {
                         RegisterScreen(
                             onNavigateToHome = {
-                                navController.navigate(Routes.HOME) {
-                                    popUpTo(Routes.AUTH_GRAPH) { inclusive = true }
-                                    launchSingleTop = true
-                                }
+                                navController.navigateWithRequest(AppNavigationPolicy.authSuccessDestination())
                             },
                             onNavigateToLogin = {
                                 navController.popBackStack()
@@ -173,10 +157,7 @@ fun AppNavGraph(
                     composable(Routes.PROFILE) {
                         ProfileScreen(
                             onNavigateToLogin = {
-                                navController.navigate(Routes.LOGIN) {
-                                    popUpTo(Routes.MAIN_GRAPH) { inclusive = true }
-                                    launchSingleTop = true
-                                }
+                                navController.navigateWithRequest(AppNavigationPolicy.logoutDestination())
                             },
                             onNavigateToSettings = {
                                 navigateToMainDestination(Routes.SETTINGS)
@@ -193,10 +174,7 @@ fun AppNavGraph(
                         SettingsScreen(
                             onNavigateBack = { navController.popBackStack() },
                             onNavigateToLogin = {
-                                navController.navigate(Routes.LOGIN) {
-                                    popUpTo(Routes.MAIN_GRAPH) { inclusive = true }
-                                    launchSingleTop = true
-                                }
+                                navController.navigateWithRequest(AppNavigationPolicy.logoutDestination())
                             },
                             showTopBar = false,
                             modifier = Modifier,

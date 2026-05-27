@@ -25,6 +25,7 @@ import com.example.android_mvvm_arch.core.datastore.SettingsDataStore
 import com.example.android_mvvm_arch.core.notification.NotificationHelper
 import com.example.android_mvvm_arch.core.sync.SyncManager
 import com.example.android_mvvm_arch.navigation.AppNavGraph
+import com.example.android_mvvm_arch.navigation.AppNavigationPolicy
 import com.example.android_mvvm_arch.navigation.Routes
 import com.example.android_mvvm_arch.presentation.MainViewModel
 import com.example.android_mvvm_arch.ui.theme.Android_mvvm_archTheme
@@ -76,9 +77,7 @@ class MainActivity : ComponentActivity() {
 
                                 LaunchedEffect(deepLink) {
                                     val target = deepLink ?: return@LaunchedEffect
-                                    if (target == NotificationHelper.DEEP_LINK_NOTIFICATIONS &&
-                                        destination != Routes.LOGIN
-                                    ) {
+                                    if (AppNavigationPolicy.shouldNavigateToNotificationsFromDeepLink(target, destination)) {
                                         navController.navigate(Routes.NOTIFICATIONS) {
                                             launchSingleTop = true
                                         }
@@ -112,6 +111,10 @@ class MainActivity : ComponentActivity() {
 
     private fun consumeDeepLink(intent: Intent?) {
         val target = intent?.getStringExtra(NotificationHelper.EXTRA_DEEP_LINK) ?: return
-        pendingDeepLink.value = target
+        pendingDeepLink.value = if (target == NotificationHelper.DEEP_LINK_NOTIFICATIONS) {
+            Routes.NOTIFICATIONS
+        } else {
+            target
+        }
     }
 }
