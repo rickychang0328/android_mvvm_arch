@@ -984,6 +984,19 @@ MainGraph (Drawer + TopAppBar)
   ├─ DrawerItem(Settings)      ─► SettingsScreen
   └─ DrawerItem(Notifications) ─► NotificationsScreen
 
+### 主導航實作細節（Drawer & Scaffold）
+
+- **抽屜配置**：使用 Material 3 `ModalNavigationDrawer` 提供側邊導覽選單。
+  - **寬度**：選單寬度動態計算為螢幕寬度的 70%（`LocalConfiguration.current.screenWidthDp.dp * 0.7f`）。
+  - **手勢控制**：透過 `gesturesEnabled = inMainArea` 控制，僅在登入後的主畫面區域允許手勢開啟抽屜。
+  - **內容**：包含 `ModalDrawerSheet` 與多個 `NavigationDrawerItem`，點擊後會關閉抽屜並切換路由。
+- **頂部欄 (TopAppBar)**：
+  - 整合於 `Scaffold` 中，僅在 `inMainArea` 為真時顯示。
+  - 標題透過 `Routes.titleForRoute(currentRoute)` 動態解析。
+  - 左側提供 `IconButton` 點擊開啟抽屜。
+- **實驗性 API 處理**：
+  - 由於 Material 3 部分組件（如 `TopAppBar`）仍處於實驗階段，`AppNavGraph` 標註了 `@OptIn(ExperimentalMaterial3Api::class)`。
+
 HomeScreen ─ QuickAction(Profile/Settings/Notifications)
           ─► 與 Drawer 共用 navigateToMainDestination(route)
 
