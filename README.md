@@ -4,6 +4,7 @@
 
 ### 主要功能
 - **HomeDashboard + Drawer**：登入後以 `ModalNavigationDrawer` 作為主殼層，統一切換 Home / Profile / Settings / Notifications；Dashboard 快速動作與 Drawer 共用同一套路由切換邏輯。
+  - **Drawer 實作細節**：選單寬度採螢幕寬度 70% 動態計算；僅在登入後的主畫面區域啟動側滑手勢（Gestures）；整合 Material 3 實驗性 `TopAppBar` 提供選單切換入口。
 - **Auth**：登入、註冊、忘記/重設密碼流程；成功後導向 `Routes.HOME`。
 - **Profile**：檢視與編輯個人資料，Room 快取 + Mock API 刷新。
 - **Settings**：深色模式、語言切換、通知開關及隱私偏好皆寫入 DataStore (`app_settings`)；變更即時套用全域 Theme。
