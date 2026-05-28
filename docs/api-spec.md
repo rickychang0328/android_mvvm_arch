@@ -353,3 +353,254 @@ Authorization: Bearer {access_token}
 - **禁止** 在 Log、Crash Report 中記錄 `password`、`access_token`、`refresh_token`。
 - Token 僅儲存於 **EncryptedSharedPreferences**（本專案 `EncryptedTokenStorage`）。
 - PII（email、phone）在本地快取（Room）不加密儲存時，需限制 Log 輸出；生產環境建議評估 SQLCipher。
+
+---
+
+## 10. 註冊 FCM Token
+
+### `POST /api/v1/push/register-token`
+
+註冊或更新目前登入使用者的 FCM token 與裝置資訊。  
+此 API 由 App 呼叫，需帶使用者 Bearer token。
+
+**Headers**
+
+```
+Authorization: Bearer {access_token}
+Content-Type: application/json
+```
+
+**Request Body**
+
+```json
+{
+  "token": "fcm_token_string",
+  "platform": "ANDROID",
+  "device_id": "android_5f3d9b3f-1e4a-4f9f-a111-1f4ac8e7f001",
+  "app_version": "1.0.0(1)",
+  "locale": "zh-TW",
+  "timezone": "Asia/Taipei"
+}
+```
+
+| 欄位 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| token | string | 是 | FCM registration token |
+| platform | string | 是 | 目前固定 `ANDROID` |
+| device_id | string | 是 | App 產生且可長期識別同裝置的 ID |
+| app_version | string | 否 | App 版本字串（觀測用） |
+| locale | string | 否 | 例如 `zh-TW` |
+| timezone | string | 否 | 例如 `Asia/Taipei` |
+
+**Response `200 OK`**
+
+```json
+{
+  "registration_id": "prg_01JY2Q8WFW1VVQ8P2M2M2M2M2M",
+  "token_status": "ACTIVE",
+  "updated_at": "2026-05-28T15:20:45Z"
+}
+```
+
+| 欄位 | 類型 | 說明 |
+|------|------|------|
+| registration_id | string | 裝置註冊紀錄 ID |
+| token_status | string | `ACTIVE` / `INACTIVE` |
+| updated_at | string | ISO 8601 UTC 時間 |
+
+**規則與冪等**
+
+- 同一 `(user_id, device_id)` 以 upsert 更新，不重複新增紀錄。
+- 若同一 `token` 出現在其他裝置或帳號，舊紀錄應失效或轉移到最新註冊者。
+- 可重複呼叫；相同資料重送應得到同一註冊狀態（冪等）。
+
+**Response `401 Unauthorized`**
+
+```json
+{
+  "error": "unauthorized",
+  "message": "Invalid or expired token."
+}
+```
+
+**Response `422 Unprocessable Entity`**
+
+```json
+{
+  "error": "validation_error",
+  "message": "token is required.",
+  "fields": { "token": "must not be blank" }
+}
+```
+
+---
+
+## 11. 建立並發送通知（內部服務）
+
+### `POST /api/v1/internal/notifications/send`
+
+建立通知事件，寫入使用者通知收件匣，並將投遞工作送入非同步佇列。  
+此 API 不對一般 App JWT 開放，僅供內部服務呼叫。
+
+**Headers**
+
+```
+Authorization: Bearer {service_or_admin_token}
+X-Idempotency-Key: {uuid-or-unique-key}
+Content-Type: application/json
+```
+
+> `X-Idempotency-Key` 與 body 中 `idempotency_key` 建議二擇一；若兩者都提供，值需一致。
+
+**Request Body**
+
+```json
+{
+  "idempotency_key": "notif-20260528-order-5566",
+  "type": "SYSTEM",
+  "title": "訂單已出貨",
+  "body": "您的訂單 #5566 已出貨，預計 2 天內送達。",
+  "data": {
+    "deep_link": "notifications",
+    "order_id": "5566"
+  },
+  "targets": {
+    "user_ids": ["usr_001", "usr_002"],
+    "topic": "promo_weekend",
+    "segments": []
+  },
+  "schedule_at": null
+}
+```
+
+| 欄位 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| idempotency_key | string | 是 | 業務唯一鍵，避免重送重複發送 |
+| type | string | 是 | 建議沿用 `SYSTEM` / `PROMOTION` / `ACTIVITY` |
+| title | string | 是 | 通知標題 |
+| body | string | 是 | 通知內容 |
+| data | object | 否 | 自訂 payload（供 deep link 或業務識別） |
+| targets.user_ids | string[] | 否 | 指定一或多位使用者 |
+| targets.topic | string | 否 | 指定 topic 廣播 |
+| targets.segments | array | 否 | 保留欄位，v1 可先不實作 |
+| schedule_at | string\|null | 否 | ISO 8601，為空則立即送出 |
+
+**目標限制**
+
+- `targets` 至少需提供一種：`user_ids` 或 `topic`。
+- 若同時提供，視為聯集投遞，收件者需去重。
+
+**Response `202 Accepted`**
+
+```json
+{
+  "notification_id": "nev_01JY2QFG9M9Z6N1N7Q4R6A3C55",
+  "accepted_targets": 1250,
+  "queued_jobs": 1250,
+  "scheduled_at": null,
+  "status": "QUEUED"
+}
+```
+
+**Response `401 Unauthorized`**
+
+```json
+{
+  "error": "unauthorized",
+  "message": "Invalid service token."
+}
+```
+
+**Response `403 Forbidden`**
+
+```json
+{
+  "error": "forbidden",
+  "message": "Insufficient scope for internal notifications."
+}
+```
+
+**Response `409 Conflict`**
+
+```json
+{
+  "error": "idempotency_conflict",
+  "message": "A request with the same idempotency key already exists."
+}
+```
+
+---
+
+## 12. 記錄通知開啟事件
+
+### `POST /api/v1/notifications/{id}/open`
+
+記錄使用者「開啟通知」事件（例如點擊系統推播後進入 App）。  
+此 API 補強 engagement 分析，不取代既有已讀 API。
+
+**Headers**
+
+```
+Authorization: Bearer {access_token}
+Content-Type: application/json
+```
+
+**Path 參數**
+
+| 名稱 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| id | string | 是 | 通知識別碼（對應 `user_notifications.id`） |
+
+**Request Body**
+
+```json
+{
+  "opened_at": 1748443800000,
+  "source": "push_tap",
+  "campaign_id": "cmp_202605_promo01"
+}
+```
+
+| 欄位 | 類型 | 必填 | 說明 |
+|------|------|------|------|
+| opened_at | number | 否 | client epoch millis；未提供時以 server time 為準 |
+| source | string | 否 | `push_tap` / `inbox_click`，預設 `push_tap` |
+| campaign_id | string | 否 | 行銷活動識別碼 |
+
+**Response `200 OK`**
+
+```json
+{
+  "notification_id": "untf_01JY2QKQ6GNY3M7K2W6WE4EHJT",
+  "opened": true,
+  "opened_at": "2026-05-28T15:30:00Z"
+}
+```
+
+| 欄位 | 類型 | 說明 |
+|------|------|------|
+| opened | boolean | 是否首次記錄開啟；若重複上報則為 `false` |
+
+**規則與冪等**
+
+- 同一 `(user_id, notification_id)` 僅允許一筆 first-open 時間。
+- 重複上報應回傳 `200` 且 `opened=false`（冪等成功）。
+- 可與 `PATCH /api/v1/notifications/{id}/read` 並存；`open` 用於行為分析，`read` 用於 UI 狀態。
+
+**Response `401 Unauthorized`**
+
+```json
+{
+  "error": "unauthorized",
+  "message": "Invalid or expired token."
+}
+```
+
+**Response `404 Not Found`**
+
+```json
+{
+  "error": "not_found",
+  "message": "Notification not found for current user."
+}
+```
