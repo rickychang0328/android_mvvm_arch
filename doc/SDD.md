@@ -920,7 +920,7 @@ HomeScreen (QuickAction 點擊)
 
 #### 功能概述
 
-本節說明 Firebase Cloud Messaging（FCM）在本專案中的整合設計，包含登入後 Token 上報、Token 刷新機制與即時推播接收。完整技術細節請參閱 `doc/FCM.md`。
+本專案整合 **Firebase Cloud Messaging（FCM）** 以支援裝置推播通知。包含登入後 Token 自動上報、Token 週期性刷新機制、以及即時推播訊息接收。完整技術細節請參閱 `doc/FCM.md`。
 
 #### 設計決策
 
@@ -928,62 +928,51 @@ HomeScreen (QuickAction 點擊)
 
 | 考量點 | 決策 |
 |--------|------|
-| **使用者體驗優先** | FCM Token 上報失敗不應阻止使用者進入 App，登入成功即導航 |
-| **非關鍵路徑** | 推播為輔助功能，不影響核心業務流程 |
-| **最終一致性** | Token 刷新時 `FcmService.onNewToken` 自動重試 |
-| **Firebase 冪等性** | 後端對重複上報 Token 通常設計為冪等，不需錯誤重試邏輯 |
+| **使用者體驗優先** | FCM Token 上報失敗不應阻止使用者進入 App，登入成功即導航，維持流暢體驗。 |
+| **非關鍵路徑** | 推播為輔助功能，上報失敗不影響核心業務（如個人資料瀏覽、設定變更）。 |
+| **最終一致性** | 即使登入時上報失敗，Token 刷新時 `FcmService.onNewToken` 會自動補上報。 |
+| **Firebase 冪等性** | 後端對重複上報 Token 通常設計為冪等（Idempotent），不需複雜的重試邏輯。 |
 
 ##### 為何在 LoginViewModel 觸發，而非 LoginUseCase？
 
-- `LoginUseCase` 遵循 **Domain 層不依賴 Android SDK** 原則；`FirebaseMessaging` 為 Android 元件，不應出現在 Domain 層
-- `RegisterFcmTokenUseCase` 雖位於 Domain 層，但其 **實作**（`FirebaseMessaging.getInstance().token.await()`）可在 UseCase 內部處理 Android 依賴，或以介面隔離
-- `LoginViewModel` 作為 Presentation 層的協調者，負責「登入成功後觸發哪些副作用」的決策，語意清晰
+- `LoginUseCase` 遵循 **Domain 層不依賴 Android SDK** 原則；`FirebaseMessaging` 為 Android 元件，不應出現在純 Kotlin 的 Domain 層。
+- `LoginViewModel` 作為 Presentation 層的協調者，負責處理「登入成功後」的副作用（Side Effects）決策。
 
-#### 元件職責總表
+#### 核心流程與時序
 
-| 類別 | 位置 | 職責 |
-|------|------|------|
-| `RegisterFcmTokenUseCase` | `feature/auth/domain/usecase` | 取得 FCM Token 並呼叫 Repository 上報 |
-| `RegisterFcmTokenRequestDto` | `feature/auth/data/remote/dto` | FCM Token 上報請求 DTO（`fcm_token`、`platform`） |
-| `FcmService` | `core/fcm` | Firebase 推播服務；處理 Token 刷新與訊息接收 |
-| `AuthApi.registerFcmToken` | `feature/auth/data/remote` | `POST /api/v1/device/fcm-token` Retrofit 端點 |
-| `AuthRepositoryImpl.registerFcmToken` | `feature/auth/data/repo` | 透過 `safeApiCall` 呼叫 API |
-| `LoginViewModel` | `feature/auth/presentation/viewmodel` | 登入成功後以 fire-and-forget 觸發 UseCase |
+##### 1. 登入後 Token 上報流程
 
-#### API 端點
+```mermaid
+sequenceDiagram
+    participant VM as LoginViewModel
+    participant RFUC as RegisterFcmTokenUseCase
+    participant Firebase as Firebase SDK
+    participant Repo as AuthRepositoryImpl
+    participant API as AuthApi
 
-| 方法 | 路徑 | 請求體 | 回應 | 說明 |
-|------|------|--------|------|------|
-| `POST` | `/api/v1/device/fcm-token` | `{ "fcm_token": "string", "platform": "android" }` | `204 No Content` | 登入後上報裝置 FCM Token |
-
-#### 登入後上報時序
-
-```
-LoginScreen → LoginIntent.SubmitLogin → LoginViewModel.submitLogin()
-  → loginUseCase() ✅
-  → emit(NavigateToProfile)                    ← 立即導航，不等待 FCM
-  → launch { registerFcmTokenUseCase() }        ← fire-and-forget
-      → FirebaseMessaging.getInstance().token.await()
-      → AuthRepository.registerFcmToken(token)
-          → AuthApi: POST /api/v1/device/fcm-token
-              body: { "fcm_token": "...", "platform": "android" }
-              response: 204 No Content
+    VM->>VM: 登入成功，發送導航事件
+    VM->>RFUC: launch { registerFcmTokenUseCase() } (fire-and-forget)
+    RFUC->>Firebase: getToken().await()
+    Firebase-->>RFUC: fcmToken
+    RFUC->>Repo: registerFcmToken(token)
+    Repo->>API: POST /api/v1/device/fcm-token
+    API-->>Repo: 204 No Content
 ```
 
-#### FcmService 職責
+##### 2. Token 刷新與即時接收 (FcmService)
 
-```
-FcmService (@AndroidEntryPoint)
-  ├─ onNewToken(token)
-  │    └─ if (authRepository.isLoggedIn())
-  │            authRepository.registerFcmToken(token)
-  └─ onMessageReceived(message)
-       └─ notificationHelper.showNotification(title, body)
-```
+- **onNewToken**：當 Firebase SDK 刷新 Token 時（如解除安裝重裝），若使用者已登入，則自動呼叫 `authRepository.registerFcmToken`。
+- **onMessageReceived**：收到推播訊息後，解析 `notification` 或 `data` 欄位，透過 `NotificationHelper` 彈出系統通知。
+
+#### 錯誤處理設計 (Silent Failure)
+
+FCM Token 上報採用**靜默失敗**策略：
+- **UseCase 層**：使用 `try-catch` 攔截 `FirebaseMessaging` 可能拋出的例外。
+- **ViewModel 層**：在 `launch` 區塊中呼叫 UseCase，若失敗則記錄 Log 但不更新 UI 錯誤狀態，確保使用者導航不被中斷。
 
 #### Mock 環境整合
 
-`MockApiInterceptor` 已加入 `POST /api/v1/device/fcm-token` 路由，回傳 `204 No Content`，確保開發環境不依賴真實 Firebase 後端即可完整測試上報流程。
+`MockApiInterceptor` 已實作 `POST /api/v1/device/fcm-token` 路由，回傳 `204 No Content`。這使得開發者在**無真實 google-services.json** 的情況下，仍可模擬並驗證整個 Token 上報流程。
 
 
 ---

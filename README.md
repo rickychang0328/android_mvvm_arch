@@ -9,7 +9,11 @@
 - **Profile**：檢視與編輯個人資料，Room 快取 + Mock API 刷新。
 - **Settings**：深色模式、語言切換、通知開關及隱私偏好皆寫入 DataStore (`app_settings`)；變更即時套用全域 Theme。
 - **Notifications**：採 Paging 3（Compose `LazyPagingItems`）列表、下拉刷新、單筆/全部設已讀；未讀徽章，並整合至 `SyncManager + WorkManager` 統一同步框架。
-- **FCM 推播整合**：登入成功後 fire-and-forget 上報裝置 FCM Token（`POST /api/v1/device/fcm-token`）；`FcmService` 處理 Token 刷新（`onNewToken`）與即時推播接收（`onMessageReceived`）；開發環境透過 `MockApiInterceptor` 模擬，無需真實 Firebase 即可運行。
+- **FCM 推播整合**：完整整合 Firebase Cloud Messaging。
+  - **自動上報**：登入成功後 fire-and-forget 上報 FCM Token（`POST /api/v1/device/fcm-token`）。
+  - **自動刷新**：`FcmService.onNewToken` 在已登入狀態下自動同步最新 Token。
+  - **即時接收**：`FcmService.onMessageReceived` 即時顯示系統通知。
+  - **Mock 支援**：開發環境透過 `MockApiInterceptor` 模擬，無需真實 Firebase 即可驗證流程。
 - **Offline-First Sync**：新增 `core/sync/`，以 `SyncManager` 統一管理 `PROFILE`、`NOTIFICATIONS` 週期/即時同步，支援網路約束、指數退避、Settings 條件過濾。
 
 ### 技術與依賴
