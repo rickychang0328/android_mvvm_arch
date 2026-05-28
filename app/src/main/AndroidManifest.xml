@@ -34,6 +34,19 @@
             </intent-filter>
         </activity>
 
+        <!--
+            Firebase Cloud Messaging Service。
+            RECEIVE 與 BIND_JOB_SERVICE 由 firebase-messaging SDK 透過 manifest merger 自動加入，
+            此處僅需明確宣告自訂 Service 並指定 intent-filter。
+        -->
+        <service
+            android:name=".core.fcm.FcmService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

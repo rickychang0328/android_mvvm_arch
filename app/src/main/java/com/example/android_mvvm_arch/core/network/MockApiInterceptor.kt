@@ -55,6 +55,8 @@ class MockApiInterceptor @Inject constructor() : Interceptor {
                 )
             method == "POST" && path.endsWith("/api/v1/notifications/read-all") ->
                 handleMarkAllNotificationsRead(request.header("Authorization"))
+            method == "POST" && path.endsWith("/api/v1/device/fcm-token") ->
+                handleRegisterFcmToken(request.header("Authorization"))
             else -> 404 to """{"error":"not_found","message":"Endpoint not found."}"""
         }
 
@@ -254,6 +256,13 @@ $joined
                 val item = notificationsStore[index]
                 notificationsStore[index] = item.copy(isRead = true)
             }
+        }
+        return 204 to ""
+    }
+
+    private fun handleRegisterFcmToken(authHeader: String?): Pair<Int, String> {
+        if (!isValidToken(authHeader)) {
+            return 401 to """{"error":"unauthorized","message":"Invalid or expired token."}"""
         }
         return 204 to ""
     }

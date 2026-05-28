@@ -46,33 +46,50 @@ class NotificationHelper @Inject constructor(
     }
 
     fun showNotification(notification: Notification) {
+        showNotification(
+            title = notification.title,
+            body = notification.body,
+            notificationId = notification.id.hashCode(),
+            deepLinkNotificationId = notification.id,
+        )
+    }
+
+    /**
+     * 顯示來自 FCM 推播的通知（不含本地 domain 物件）。
+     */
+    fun showNotification(
+        title: String,
+        body: String,
+        notificationId: Int = title.hashCode(),
+        deepLinkNotificationId: String? = null,
+    ) {
         if (!hasPostNotificationPermission()) return
 
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra(EXTRA_DEEP_LINK, DEEP_LINK_NOTIFICATIONS)
-            putExtra(EXTRA_NOTIFICATION_ID, notification.id)
+            deepLinkNotificationId?.let { putExtra(EXTRA_NOTIFICATION_ID, it) }
         }
 
         val pendingFlags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         val contentIntent = PendingIntent.getActivity(
             context,
-            notification.id.hashCode(),
+            notificationId,
             intent,
             pendingFlags,
         )
 
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher_round)
-            .setContentTitle(notification.title)
-            .setContentText(notification.body)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(notification.body))
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setAutoCancel(true)
             .setContentIntent(contentIntent)
 
         NotificationManagerCompat.from(context)
-            .notify(notification.id.hashCode(), builder.build())
+            .notify(notificationId, builder.build())
     }
 
     private fun hasPostNotificationPermission(): Boolean {

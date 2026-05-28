@@ -4,6 +4,7 @@ import com.example.android_mvvm_arch.feature.auth.data.remote.dto.ForgotPassword
 import com.example.android_mvvm_arch.feature.auth.data.remote.dto.LoginRequestDto
 import com.example.android_mvvm_arch.feature.auth.data.remote.dto.LoginResponseDto
 import com.example.android_mvvm_arch.feature.auth.data.remote.dto.RefreshTokenRequestDto
+import com.example.android_mvvm_arch.feature.auth.data.remote.dto.RegisterFcmTokenRequestDto
 import com.example.android_mvvm_arch.feature.auth.data.remote.dto.RegisterRequestDto
 import com.example.android_mvvm_arch.feature.auth.data.remote.dto.ResetPasswordRequestDto
 import retrofit2.http.Body
@@ -27,4 +28,7 @@ interface AuthApi {
 
     @POST("api/v1/auth/reset-password")
     suspend fun resetPassword(@Body request: ResetPasswordRequestDto)
+
+    @POST("api/v1/device/fcm-token")
+    suspend fun registerFcmToken(@Body request: RegisterFcmTokenRequestDto)
 }

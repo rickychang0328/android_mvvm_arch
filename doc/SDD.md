@@ -6,7 +6,7 @@
 **版本：** 1.0.0  
 **架構風格：** Clean Architecture + MVVM + MVI  
 **語言：** Kotlin  
-**日期：** 2026-05-21  
+**日期：** 2026-05-28  
 
 ---
 
@@ -29,6 +29,7 @@
    - 6.4 [Notifications 通知功能](#64-notifications-通知功能)
    - 6.5 [HomeDashboard 主頁功能](#65-homedashboard-主頁功能)
    - 6.6 [Paging 3 列表模板](#66-paging-3-列表模板)
+   - 6.7 [FCM 推播整合](#67-fcm-推播整合)
 7. [安全設計（DLP）](#7-安全設計dlp)
 8. [錯誤處理策略](#8-錯誤處理策略)
 9. [導航設計](#9-導航設計)
@@ -39,7 +40,7 @@
 
 ## 1. 專案概述
 
-本專案為 Android 行動應用程式，示範以 **Clean Architecture** 搭配 **MVVM + MVI** 風格實作「登入 / 登出」、「Home Dashboard + Drawer 主導航」、「個人資料檢視 / 編輯」與「應用程式設定（深色模式、語言、通知）」等功能模組。所有網路呼叫透過 `MockApiInterceptor` 於本地模擬，可無需後端即獨立運行。
+本專案為 Android 行動應用程式，示範以 **Clean Architecture** 搭配 **MVVM + MVI** 風格實作「登入 / 登出」、「Home Dashboard + Drawer 主導航」、「個人資料檢視 / 編輯」、「應用程式設定（深色模式、語言、通知）」與「FCM 推播整合（登入後上報 Token）」等功能模組。所有網路呼叫透過 `MockApiInterceptor` 於本地模擬，可無需後端即獨立運行。
 
 ### 核心目標
 
@@ -80,9 +81,19 @@
 │  DTOs · Mappers · SettingsDataStore     │
 │  EncryptedTokenStorage（Token 專用）     │
 └─────────────────────────────────────────┘
+
+┌─────────────────────────────────────────┐
+│              Core 模組                  │
+│  core/fcm/      FcmService              │
+│    ├─ onNewToken → registerFcmToken     │
+│    └─ onMessageReceived → showNotif.    │
+│  core/notification/  NotificationHelper │
+│  core/network/       MockApiInterceptor │
+└─────────────────────────────────────────┘
 ```
 
-**依賴方向：** `Presentation → Domain ← Data`（嚴格向內依賴）
+**依賴方向：** `Presentation → Domain ← Data`（嚴格向內依賴）  
+**FCM 服務層**：`FcmService`（`core/fcm/`）為 Android 系統元件，可直接依賴 Domain 層的 Repository 介面（透過 Hilt 注入）
 
 ---
 
@@ -105,6 +116,7 @@ Domain 層是應用程式的核心，**不得引用任何 `android.*` 套件**�
 | `LoginUseCase` | `feature/auth/domain/usecase` | 驗證輸入並呼叫 AuthRepository.login |
 | `LogoutUseCase` | `feature/auth/domain/usecase` | 呼叫 AuthRepository.logout |
 | `IsLoggedInUseCase` | `feature/auth/domain/usecase` | 查詢是否已登入 |
+| `RegisterFcmTokenUseCase` | `feature/auth/domain/usecase` | 取得 Firebase FCM Token，呼叫 AuthRepository.registerFcmToken 上報至後端 |
 | `GetUserProfileUseCase` | `feature/profile/domain/usecase` | 訂閱 / 刷新個人資料 |
 | `UpdateUserProfileUseCase` | `feature/profile/domain/usecase` | 驗證欄位並呼叫 ProfileRepository.update |
 | `UploadAvatarUseCase` | `feature/profile/domain/usecase` | 驗證檔案存在後呼叫 ProfileRepository.uploadAvatar（Multipart） |
@@ -124,9 +136,10 @@ Data 層實作 Domain 介面，處理網路與本地資料。
 
 | 類別 | 位置 | 職責 |
 |------|------|------|
-| `AuthApi` | `feature/auth/data/remote` | Retrofit 介面，定義登入 / 登出端點 |
+| `AuthApi` | `feature/auth/data/remote` | Retrofit 介面，定義登入 / 登出 / FCM Token 上報端點 |
 | `ProfileApi` | `feature/profile/data/remote` | Retrofit 介面，定義個人資料端點（get / update / uploadAvatar Multipart） |
 | `LoginRequestDto` | `feature/auth/data/remote/dto` | 登入請求 DTO |
+| `RegisterFcmTokenRequestDto` | `feature/auth/data/remote/dto` | FCM Token 上報請求 DTO（`fcm_token`: String、`platform`: String = "android"） |
 | `LoginResponseDto` | `feature/auth/data/remote/dto` | 登入回應 DTO |
 | `UserProfileDto` | `feature/profile/data/remote/dto` | 個人資料回應 DTO |
 | `UpdateProfileRequestDto` | `feature/profile/data/remote/dto` | 更新個人資料請求 DTO |
@@ -205,6 +218,7 @@ Entity─ProfileMapper►  Domain Model
 | `core/datastore` | `SettingsDataStoreImpl` | Preferences DataStore 實作 |
 | `core/notification` | `NotificationHelper` | 建立 channel、發送系統通知、設定 deep link PendingIntent |
 | `core/notification` | `NotificationSyncWorker` | `@HiltWorker` + `@AssistedInject`，週期 15 分鐘同步通知並彈出系統通知 |
+| `core/fcm` | `FcmService` | `@AndroidEntryPoint` Firebase 推播服務；`onNewToken` 在已登入時重新上報 Token；`onMessageReceived` 透過 `NotificationHelper` 顯示即時系統通知 |
 
 ### 3.5 DI 模組
 
@@ -252,9 +266,11 @@ app/src/main/java/com/example/android_mvvm_arch/
 │   │   ├── AppSettings.kt
 │   │   ├── SettingsDataStore.kt
 │   │   └── SettingsDataStoreImpl.kt
-│   └── notification/
-│       ├── NotificationHelper.kt
-│       └── NotificationSyncWorker.kt
+│   ├── notification/
+│   │   ├── NotificationHelper.kt
+│   │   └── NotificationSyncWorker.kt
+│   └── fcm/
+│       └── FcmService.kt
 │
 ├── di/
 │   ├── AppModule.kt
@@ -269,11 +285,13 @@ app/src/main/java/com/example/android_mvvm_arch/
     │   │   ├── model/  LoginCredentials.kt, AuthTokens.kt
     │   │   ├── repo/   AuthRepository.kt
     │   │   └── usecase/ LoginUseCase.kt, LogoutUseCase.kt,
-    │   │                IsLoggedInUseCase.kt
+    │   │                IsLoggedInUseCase.kt,
+    │   │                RegisterFcmTokenUseCase.kt
     │   ├── data/
     │   │   ├── remote/ AuthApi.kt
     │   │   │   └── dto/ LoginRequestDto.kt, LoginResponseDto.kt,
-    │   │   │            ApiErrorDto.kt
+    │   │   │            ApiErrorDto.kt,
+    │   │   │            RegisterFcmTokenRequestDto.kt
     │   │   ├── mapper/ AuthMapper.kt
     │   │   └── repo/   AuthRepositoryImpl.kt
     │   └── presentation/
@@ -366,6 +384,8 @@ app/src/main/java/com/example/android_mvvm_arch/
 | **背景排程** | Hilt Work / Hilt Compiler (androidx.hilt) | 1.2.0 |
 | **安全** | Security Crypto | 1.1.0-alpha06 |
 | **ViewModel** | Lifecycle | 2.8.7 |
+| **推播** | Firebase BOM | 33.14.0 |
+| **推播** | Firebase Messaging KTX | BOM 管理 |
 | **單元測試** | JUnit 5 (Jupiter) | 5.11.4 |
 | **單元測試** | MockK | 1.13.14 |
 | **單元測試** | Turbine (Flow) | 1.2.0 |
@@ -422,6 +442,18 @@ sealed interface LoginIntent {
 | email | 不得為空 | "Email cannot be empty." |
 | email | 格式：`^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$` | "Invalid email format." |
 | password | 不得為空 | "Password cannot be empty." |
+
+#### 登入後 FCM Token 上報
+
+登入成功後，`LoginViewModel` 以 **fire-and-forget** 模式呼叫 `RegisterFcmTokenUseCase`，將裝置 FCM Token 上報至後端（`POST /api/v1/device/fcm-token`）。此操作不阻斷登入流程，即使失敗也不影響使用者體驗。詳細設計請參閱 [6.7 FCM 推播整合](#67-fcm-推播整合) 與 `doc/FCM.md`。
+
+```kotlin
+// LoginViewModel 登入成功後
+_uiEvent.emit(LoginUiEvent.NavigateToProfile)
+viewModelScope.launch {
+    registerFcmTokenUseCase()  // fire-and-forget：失敗時靜默忽略
+}
+```
 
 ### 6.2 Profile 個人資料功能
 
@@ -881,6 +913,78 @@ HomeScreen (QuickAction 點擊)
 4. **UseCase**：建立對應 `Get*PagingUseCase`，保持 Presentation 僅依賴 Domain。
 5. **Presentation (MVI + Compose)**：ViewModel 暴露 `pagingDataFlow.cachedIn(viewModelScope)`；Screen 使用 `collectAsLazyPagingItems()`，統一處理 `loadState.refresh/append` 的 loading、error、retry、refresh。
 6. **與既有快取協調**：若同時需要未讀徽章、背景同步、離線資料，PagingSource 可在成功載入後寫入 Room；標記已讀後觸發 `lazyPagingItems.refresh()` 以對齊遠端狀態。
+
+---
+
+### 6.7 FCM 推播整合
+
+#### 功能概述
+
+本節說明 Firebase Cloud Messaging（FCM）在本專案中的整合設計，包含登入後 Token 上報、Token 刷新機制與即時推播接收。完整技術細節請參閱 `doc/FCM.md`。
+
+#### 設計決策
+
+##### 為何採用 fire-and-forget 觸發？
+
+| 考量點 | 決策 |
+|--------|------|
+| **使用者體驗優先** | FCM Token 上報失敗不應阻止使用者進入 App，登入成功即導航 |
+| **非關鍵路徑** | 推播為輔助功能，不影響核心業務流程 |
+| **最終一致性** | Token 刷新時 `FcmService.onNewToken` 自動重試 |
+| **Firebase 冪等性** | 後端對重複上報 Token 通常設計為冪等，不需錯誤重試邏輯 |
+
+##### 為何在 LoginViewModel 觸發，而非 LoginUseCase？
+
+- `LoginUseCase` 遵循 **Domain 層不依賴 Android SDK** 原則；`FirebaseMessaging` 為 Android 元件，不應出現在 Domain 層
+- `RegisterFcmTokenUseCase` 雖位於 Domain 層，但其 **實作**（`FirebaseMessaging.getInstance().token.await()`）可在 UseCase 內部處理 Android 依賴，或以介面隔離
+- `LoginViewModel` 作為 Presentation 層的協調者，負責「登入成功後觸發哪些副作用」的決策，語意清晰
+
+#### 元件職責總表
+
+| 類別 | 位置 | 職責 |
+|------|------|------|
+| `RegisterFcmTokenUseCase` | `feature/auth/domain/usecase` | 取得 FCM Token 並呼叫 Repository 上報 |
+| `RegisterFcmTokenRequestDto` | `feature/auth/data/remote/dto` | FCM Token 上報請求 DTO（`fcm_token`、`platform`） |
+| `FcmService` | `core/fcm` | Firebase 推播服務；處理 Token 刷新與訊息接收 |
+| `AuthApi.registerFcmToken` | `feature/auth/data/remote` | `POST /api/v1/device/fcm-token` Retrofit 端點 |
+| `AuthRepositoryImpl.registerFcmToken` | `feature/auth/data/repo` | 透過 `safeApiCall` 呼叫 API |
+| `LoginViewModel` | `feature/auth/presentation/viewmodel` | 登入成功後以 fire-and-forget 觸發 UseCase |
+
+#### API 端點
+
+| 方法 | 路徑 | 請求體 | 回應 | 說明 |
+|------|------|--------|------|------|
+| `POST` | `/api/v1/device/fcm-token` | `{ "fcm_token": "string", "platform": "android" }` | `204 No Content` | 登入後上報裝置 FCM Token |
+
+#### 登入後上報時序
+
+```
+LoginScreen → LoginIntent.SubmitLogin → LoginViewModel.submitLogin()
+  → loginUseCase() ✅
+  → emit(NavigateToProfile)                    ← 立即導航，不等待 FCM
+  → launch { registerFcmTokenUseCase() }        ← fire-and-forget
+      → FirebaseMessaging.getInstance().token.await()
+      → AuthRepository.registerFcmToken(token)
+          → AuthApi: POST /api/v1/device/fcm-token
+              body: { "fcm_token": "...", "platform": "android" }
+              response: 204 No Content
+```
+
+#### FcmService 職責
+
+```
+FcmService (@AndroidEntryPoint)
+  ├─ onNewToken(token)
+  │    └─ if (authRepository.isLoggedIn())
+  │            authRepository.registerFcmToken(token)
+  └─ onMessageReceived(message)
+       └─ notificationHelper.showNotification(title, body)
+```
+
+#### Mock 環境整合
+
+`MockApiInterceptor` 已加入 `POST /api/v1/device/fcm-token` 路由，回傳 `204 No Content`，確保開發環境不依賴真實 Firebase 後端即可完整測試上報流程。
+
 
 ---
 

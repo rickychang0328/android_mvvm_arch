@@ -6,6 +6,7 @@ import com.example.android_mvvm_arch.feature.auth.data.mapper.AuthMapper
 import com.example.android_mvvm_arch.feature.auth.data.remote.AuthApi
 import com.example.android_mvvm_arch.feature.auth.data.remote.dto.ForgotPasswordRequestDto
 import com.example.android_mvvm_arch.feature.auth.data.remote.dto.RefreshTokenRequestDto
+import com.example.android_mvvm_arch.feature.auth.data.remote.dto.RegisterFcmTokenRequestDto
 import com.example.android_mvvm_arch.feature.auth.data.remote.dto.ResetPasswordRequestDto
 import com.example.android_mvvm_arch.feature.auth.domain.model.AuthTokens
 import com.example.android_mvvm_arch.feature.auth.domain.model.LoginCredentials
@@ -75,4 +76,7 @@ class AuthRepositoryImpl @Inject constructor(
 
     override suspend fun resetPassword(token: String, newPassword: String): Result<Unit> =
         safeApiCall { authApi.resetPassword(ResetPasswordRequestDto(token, newPassword)) }
+
+    override suspend fun registerFcmToken(token: String): Result<Unit> =
+        safeApiCall { authApi.registerFcmToken(RegisterFcmTokenRequestDto(fcmToken = token)) }
 }

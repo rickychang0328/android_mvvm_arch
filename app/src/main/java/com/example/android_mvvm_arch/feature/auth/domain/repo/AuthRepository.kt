@@ -12,4 +12,5 @@ interface AuthRepository {
     suspend fun register(credentials: RegisterCredentials): Result<AuthTokens>
     suspend fun forgotPassword(email: String): Result<Unit>
     suspend fun resetPassword(token: String, newPassword: String): Result<Unit>
+    suspend fun registerFcmToken(token: String): Result<Unit>
 }

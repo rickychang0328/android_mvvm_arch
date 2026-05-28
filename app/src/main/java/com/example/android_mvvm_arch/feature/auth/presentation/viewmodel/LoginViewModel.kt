@@ -6,6 +6,7 @@ import com.example.android_mvvm_arch.core.network.ApiException
 import com.example.android_mvvm_arch.core.sync.SyncManager
 import com.example.android_mvvm_arch.core.sync.SyncTarget
 import com.example.android_mvvm_arch.feature.auth.domain.usecase.LoginUseCase
+import com.example.android_mvvm_arch.feature.auth.domain.usecase.RegisterFcmTokenUseCase
 import com.example.android_mvvm_arch.feature.auth.presentation.state.LoginIntent
 import com.example.android_mvvm_arch.feature.auth.presentation.state.LoginUiEvent
 import com.example.android_mvvm_arch.feature.auth.presentation.state.LoginUiState
@@ -23,6 +24,7 @@ import javax.inject.Inject
 @HiltViewModel
 class LoginViewModel @Inject constructor(
     private val loginUseCase: LoginUseCase,
+    private val registerFcmTokenUseCase: RegisterFcmTokenUseCase,
     private val syncManager: SyncManager,
 ) : ViewModel() {
 
@@ -53,6 +55,8 @@ class LoginViewModel @Inject constructor(
             loginUseCase(state.email, state.password)
                 .onSuccess {
                     _uiState.update { it.copy(isLoading = false) }
+                    // FCM token 上報為 fire-and-forget，失敗不中斷登入流程
+                    launch { registerFcmTokenUseCase() }
                     syncManager.requestImmediateSync(
                         setOf(
                             SyncTarget.PROFILE,
