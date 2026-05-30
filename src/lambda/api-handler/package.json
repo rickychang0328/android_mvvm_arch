@@ -1,0 +1,13 @@
+{
+  "name": "api-handler",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.js",
+  "dependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.758.0",
+    "@aws-sdk/client-sqs": "^3.758.0",
+    "jsonwebtoken": "^9.0.2",
+    "jwks-rsa": "^3.1.0",
+    "pg": "^8.13.3"
+  }
+}
