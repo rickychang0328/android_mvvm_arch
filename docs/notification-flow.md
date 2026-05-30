@@ -148,3 +148,32 @@ stateDiagram-v2
 4. 補上 `mark-open` 與報表指標。
 5. 最後啟用 DLQ 監控與重送作業。
 
+---
+
+## 8) AWS dev（ap-southeast-2）資源對應
+
+已在 `infra/dev` 提供 CloudFormation nested stacks，對應如下：
+
+- `network.yaml`
+  - VPC、2 個 public subnets、2 個 private subnets、NAT、Lambda/RDS security groups
+- `data.yaml`
+  - RDS PostgreSQL、DB subnet group、parameter group、Secrets Manager 憑證
+- `messaging.yaml`
+  - `notification-main` queue + `notification-dlq`
+- `compute-api.yaml`
+  - API Lambda + HTTP API routes（含 `register-token` / `internal send` / `mark-open`）
+- `compute-worker.yaml`
+  - SQS consumer Lambda + event source mapping（發送 FCM 與更新投遞狀態）
+- `monitoring.yaml`
+  - Lambda errors/throttles、SQS age/DLQ depth、RDS CPU alarms
+- `root-stack.yaml`
+  - 聚合全部 nested stacks 與跨堆疊輸出
+
+部署腳本：
+
+- `infra/scripts/deploy-dev.sh`：上傳 template/artifact -> create change set -> pre-deploy validation -> execute
+
+部署說明：
+
+- `docs/aws-dev-deploy.md`
+

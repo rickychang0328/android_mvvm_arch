@@ -1,0 +1,154 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Root nested stack for notification backend in dev ap-southeast-2.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: android-mvvm-arch
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+  TemplateBucket:
+    Type: String
+    Description: S3 bucket hosting CloudFormation nested templates.
+  TemplatePrefix:
+    Type: String
+    Default: infra/dev
+    Description: S3 key prefix for nested templates.
+  ApiCodeS3Bucket:
+    Type: String
+    Description: S3 bucket hosting api lambda artifact.
+  ApiCodeS3Key:
+    Type: String
+    Description: S3 key for api lambda artifact zip.
+  WorkerCodeS3Bucket:
+    Type: String
+    Description: S3 bucket hosting worker lambda artifact.
+  WorkerCodeS3Key:
+    Type: String
+    Description: S3 key for worker lambda artifact zip.
+  JwtIssuer:
+    Type: String
+    Description: JWT issuer used by API authentication.
+  JwtAudience:
+    Type: String
+    Description: JWT audience used by API authentication.
+  NotificationServiceScope:
+    Type: String
+    Default: notifications:send
+  DBName:
+    Type: String
+    Default: notifications
+  DBUsername:
+    Type: String
+    Default: app_user
+  DBInstanceClass:
+    Type: String
+    Default: db.t4g.micro
+  DBAllocatedStorage:
+    Type: Number
+    Default: 20
+  AlarmSnsTopicArn:
+    Type: String
+    Default: ''
+
+Resources:
+  NetworkStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub 'https://s3.${AWS::Region}.amazonaws.com/${TemplateBucket}/${TemplatePrefix}/network.yaml'
+      Parameters:
+        ProjectName: !Ref ProjectName
+        Environment: !Ref Environment
+
+  DataStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub 'https://s3.${AWS::Region}.amazonaws.com/${TemplateBucket}/${TemplatePrefix}/data.yaml'
+      Parameters:
+        ProjectName: !Ref ProjectName
+        Environment: !Ref Environment
+        VpcId: !GetAtt NetworkStack.Outputs.VpcId
+        PrivateSubnetIds: !GetAtt NetworkStack.Outputs.PrivateSubnetIds
+        RdsSecurityGroupId: !GetAtt NetworkStack.Outputs.RdsSecurityGroupId
+        DBName: !Ref DBName
+        DBUsername: !Ref DBUsername
+        DBInstanceClass: !Ref DBInstanceClass
+        DBAllocatedStorage: !Ref DBAllocatedStorage
+
+  MessagingStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub 'https://s3.${AWS::Region}.amazonaws.com/${TemplateBucket}/${TemplatePrefix}/messaging.yaml'
+      Parameters:
+        ProjectName: !Ref ProjectName
+        Environment: !Ref Environment
+
+  ComputeApiStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub 'https://s3.${AWS::Region}.amazonaws.com/${TemplateBucket}/${TemplatePrefix}/compute-api.yaml'
+      Parameters:
+        ProjectName: !Ref ProjectName
+        Environment: !Ref Environment
+        CodeS3Bucket: !Ref ApiCodeS3Bucket
+        CodeS3Key: !Ref ApiCodeS3Key
+        JwtIssuer: !Ref JwtIssuer
+        JwtAudience: !Ref JwtAudience
+        NotificationServiceScope: !Ref NotificationServiceScope
+        DbSecretArn: !GetAtt DataStack.Outputs.DbSecretArn
+        DbEndpointAddress: !GetAtt DataStack.Outputs.DbEndpointAddress
+        DbEndpointPort: !GetAtt DataStack.Outputs.DbEndpointPort
+        DbName: !GetAtt DataStack.Outputs.DbName
+        MainQueueUrl: !GetAtt MessagingStack.Outputs.MainQueueUrl
+        MainQueueArn: !GetAtt MessagingStack.Outputs.MainQueueArn
+        LambdaSecurityGroupId: !GetAtt NetworkStack.Outputs.LambdaSecurityGroupId
+        PrivateSubnetIds: !GetAtt NetworkStack.Outputs.PrivateSubnetIds
+
+  ComputeWorkerStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub 'https://s3.${AWS::Region}.amazonaws.com/${TemplateBucket}/${TemplatePrefix}/compute-worker.yaml'
+      Parameters:
+        ProjectName: !Ref ProjectName
+        Environment: !Ref Environment
+        CodeS3Bucket: !Ref WorkerCodeS3Bucket
+        CodeS3Key: !Ref WorkerCodeS3Key
+        MainQueueArn: !GetAtt MessagingStack.Outputs.MainQueueArn
+        MainQueueUrl: !GetAtt MessagingStack.Outputs.MainQueueUrl
+        DbSecretArn: !GetAtt DataStack.Outputs.DbSecretArn
+        DbEndpointAddress: !GetAtt DataStack.Outputs.DbEndpointAddress
+        DbEndpointPort: !GetAtt DataStack.Outputs.DbEndpointPort
+        DbName: !GetAtt DataStack.Outputs.DbName
+        LambdaSecurityGroupId: !GetAtt NetworkStack.Outputs.LambdaSecurityGroupId
+        PrivateSubnetIds: !GetAtt NetworkStack.Outputs.PrivateSubnetIds
+
+  MonitoringStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub 'https://s3.${AWS::Region}.amazonaws.com/${TemplateBucket}/${TemplatePrefix}/monitoring.yaml'
+      Parameters:
+        ProjectName: !Ref ProjectName
+        Environment: !Ref Environment
+        ApiFunctionName: !GetAtt ComputeApiStack.Outputs.ApiFunctionName
+        WorkerFunctionName: !GetAtt ComputeWorkerStack.Outputs.WorkerFunctionName
+        MainQueueName: !GetAtt MessagingStack.Outputs.MainQueueName
+        DeadLetterQueueName: !GetAtt MessagingStack.Outputs.DeadLetterQueueName
+        DbInstanceIdentifier: !GetAtt DataStack.Outputs.DbInstanceIdentifier
+        AlarmSnsTopicArn: !Ref AlarmSnsTopicArn
+
+Outputs:
+  ApiEndpoint:
+    Description: API endpoint url.
+    Value: !GetAtt ComputeApiStack.Outputs.ApiEndpoint
+  MainQueueUrl:
+    Description: Notification main queue URL.
+    Value: !GetAtt MessagingStack.Outputs.MainQueueUrl
+  DeadLetterQueueName:
+    Description: Notification dead letter queue name.
+    Value: !GetAtt MessagingStack.Outputs.DeadLetterQueueName
+  DbSecretArn:
+    Description: SecretsManager ARN for DB credentials.
+    Value: !GetAtt DataStack.Outputs.DbSecretArn

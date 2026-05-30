@@ -1,0 +1,100 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Data stack for notification backend in dev.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: android-mvvm-arch
+  Environment:
+    Type: String
+    Default: dev
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  PrivateSubnetIds:
+    Type: CommaDelimitedList
+  RdsSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+  DBName:
+    Type: String
+    Default: notifications
+  DBUsername:
+    Type: String
+    Default: app_user
+  DBInstanceClass:
+    Type: String
+    Default: db.t4g.micro
+  DBAllocatedStorage:
+    Type: Number
+    Default: 20
+  DBEngineVersion:
+    Type: String
+    Default: '15.7'
+
+Resources:
+  DbCredentialsSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub '${ProjectName}/${Environment}/db/credentials'
+      Description: Credentials for notification PostgreSQL database.
+      GenerateSecretString:
+        SecretStringTemplate: !Sub '{"username":"${DBUsername}"}'
+        GenerateStringKey: password
+        PasswordLength: 24
+        ExcludeCharacters: '"@/\'
+
+  DbSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnets for notification database.
+      SubnetIds: !Ref PrivateSubnetIds
+      DBSubnetGroupName: !Sub '${ProjectName}-${Environment}-db-subnets'
+
+  DbParameterGroup:
+    Type: AWS::RDS::DBParameterGroup
+    Properties:
+      Description: PostgreSQL parameter group for notifications backend.
+      Family: postgres15
+      Parameters:
+        log_min_duration_statement: '500'
+        max_connections: '200'
+
+  DbInstance:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      DBInstanceIdentifier: !Sub '${ProjectName}-${Environment}-pg'
+      Engine: postgres
+      EngineVersion: !Ref DBEngineVersion
+      DBInstanceClass: !Ref DBInstanceClass
+      AllocatedStorage: !Ref DBAllocatedStorage
+      StorageType: gp3
+      StorageEncrypted: true
+      MultiAZ: false
+      PubliclyAccessible: false
+      BackupRetentionPeriod: 7
+      AutoMinorVersionUpgrade: true
+      DBName: !Ref DBName
+      DBSubnetGroupName: !Ref DbSubnetGroup
+      VPCSecurityGroups:
+        - !Ref RdsSecurityGroupId
+      DBParameterGroupName: !Ref DbParameterGroup
+      MasterUsername: !Sub '{{resolve:secretsmanager:${DbCredentialsSecret}:SecretString:username}}'
+      MasterUserPassword: !Sub '{{resolve:secretsmanager:${DbCredentialsSecret}:SecretString:password}}'
+
+Outputs:
+  DbEndpointAddress:
+    Description: RDS endpoint hostname.
+    Value: !GetAtt DbInstance.Endpoint.Address
+  DbEndpointPort:
+    Description: RDS endpoint port.
+    Value: !GetAtt DbInstance.Endpoint.Port
+  DbName:
+    Description: Database name.
+    Value: !Ref DBName
+  DbSecretArn:
+    Description: Secret ARN for DB credentials.
+    Value: !Ref DbCredentialsSecret
+  DbInstanceIdentifier:
+    Description: DB instance identifier.
+    Value: !Ref DbInstance

@@ -1,0 +1,146 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Worker compute stack for notification backend in dev.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: android-mvvm-arch
+  Environment:
+    Type: String
+    Default: dev
+  LambdaRuntime:
+    Type: String
+    Default: nodejs20.x
+  LambdaHandler:
+    Type: String
+    Default: index.handler
+  WorkerMemorySize:
+    Type: Number
+    Default: 512
+  WorkerTimeout:
+    Type: Number
+    Default: 60
+  WorkerLogRetentionDays:
+    Type: Number
+    Default: 14
+  WorkerBatchSize:
+    Type: Number
+    Default: 10
+  WorkerMaximumBatchingWindowInSeconds:
+    Type: Number
+    Default: 5
+  CodeS3Bucket:
+    Type: String
+  CodeS3Key:
+    Type: String
+  MainQueueArn:
+    Type: String
+  MainQueueUrl:
+    Type: String
+  DbSecretArn:
+    Type: String
+  DbEndpointAddress:
+    Type: String
+  DbEndpointPort:
+    Type: String
+    Default: '5432'
+  DbName:
+    Type: String
+  LambdaSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+  PrivateSubnetIds:
+    Type: CommaDelimitedList
+
+Resources:
+  WorkerFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-${Environment}-worker-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: !Sub '${ProjectName}-${Environment}-worker-policy'
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ec2:CreateNetworkInterface
+                  - ec2:DescribeNetworkInterfaces
+                  - ec2:DeleteNetworkInterface
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:ChangeMessageVisibility
+                  - sqs:GetQueueAttributes
+                Resource: !Ref MainQueueArn
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Ref DbSecretArn
+
+  WorkerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ProjectName}-${Environment}-push-worker'
+      RetentionInDays: !Ref WorkerLogRetentionDays
+
+  WorkerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-${Environment}-push-worker'
+      Runtime: !Ref LambdaRuntime
+      Handler: !Ref LambdaHandler
+      MemorySize: !Ref WorkerMemorySize
+      Timeout: !Ref WorkerTimeout
+      Role: !GetAtt WorkerFunctionRole.Arn
+      Code:
+        S3Bucket: !Ref CodeS3Bucket
+        S3Key: !Ref CodeS3Key
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroupId
+        SubnetIds: !Ref PrivateSubnetIds
+      Environment:
+        Variables:
+          APP_ENV: !Ref Environment
+          DB_SECRET_ARN: !Ref DbSecretArn
+          DB_ENDPOINT: !Ref DbEndpointAddress
+          DB_PORT: !Ref DbEndpointPort
+          DB_NAME: !Ref DbName
+          SQS_NOTIFICATION_QUEUE_URL: !Ref MainQueueUrl
+
+  WorkerEventSourceMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !Ref MainQueueArn
+      FunctionName: !Ref WorkerFunction
+      Enabled: true
+      BatchSize: !Ref WorkerBatchSize
+      MaximumBatchingWindowInSeconds: !Ref WorkerMaximumBatchingWindowInSeconds
+
+Outputs:
+  WorkerFunctionName:
+    Description: Worker Lambda function name.
+    Value: !Ref WorkerFunction
+  WorkerFunctionArn:
+    Description: Worker Lambda function ARN.
+    Value: !GetAtt WorkerFunction.Arn
+  WorkerEventSourceMappingId:
+    Description: Event source mapping id.
+    Value: !Ref WorkerEventSourceMapping

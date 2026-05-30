@@ -1,0 +1,56 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Messaging stack for notification backend in dev.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: android-mvvm-arch
+  Environment:
+    Type: String
+    Default: dev
+  MainQueueVisibilityTimeout:
+    Type: Number
+    Default: 60
+  MainQueueMessageRetentionSeconds:
+    Type: Number
+    Default: 345600
+  DeadLetterQueueMessageRetentionSeconds:
+    Type: Number
+    Default: 1209600
+  MaxReceiveCount:
+    Type: Number
+    Default: 5
+
+Resources:
+  DeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${ProjectName}-${Environment}-notification-dlq'
+      MessageRetentionPeriod: !Ref DeadLetterQueueMessageRetentionSeconds
+
+  MainQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${ProjectName}-${Environment}-notification-main'
+      VisibilityTimeout: !Ref MainQueueVisibilityTimeout
+      MessageRetentionPeriod: !Ref MainQueueMessageRetentionSeconds
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt DeadLetterQueue.Arn
+        maxReceiveCount: !Ref MaxReceiveCount
+
+Outputs:
+  MainQueueArn:
+    Description: ARN of main queue.
+    Value: !GetAtt MainQueue.Arn
+  MainQueueUrl:
+    Description: URL of main queue.
+    Value: !Ref MainQueue
+  MainQueueName:
+    Description: Name of main queue.
+    Value: !GetAtt MainQueue.QueueName
+  DeadLetterQueueArn:
+    Description: ARN of dead-letter queue.
+    Value: !GetAtt DeadLetterQueue.Arn
+  DeadLetterQueueName:
+    Description: Name of dead-letter queue.
+    Value: !GetAtt DeadLetterQueue.QueueName
