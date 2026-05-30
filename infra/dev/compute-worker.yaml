@@ -50,6 +50,17 @@ Parameters:
     Type: AWS::EC2::SecurityGroup::Id
   PrivateSubnetIds:
     Type: CommaDelimitedList
+  ConnectionsTableName:
+    Type: String
+  ConnectionsTableArn:
+    Type: String
+  WebSocketApiId:
+    Type: String
+  WebSocketStageName:
+    Type: String
+    Default: dev
+  WebSocketManagementEndpoint:
+    Type: String
 
 Resources:
   WorkerFunctionRole:
@@ -93,6 +104,18 @@ Resources:
                 Action:
                   - secretsmanager:GetSecretValue
                 Resource: !Ref DbSecretArn
+              - Effect: Allow
+                Action:
+                  - dynamodb:Query
+                  - dynamodb:GetItem
+                  - dynamodb:DeleteItem
+                Resource:
+                  - !Ref ConnectionsTableArn
+                  - !Sub '${ConnectionsTableArn}/index/*'
+              - Effect: Allow
+                Action:
+                  - execute-api:ManageConnections
+                Resource: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApiId}/${WebSocketStageName}/POST/@connections/*'
 
   WorkerLogGroup:
     Type: AWS::Logs::LogGroup
@@ -124,6 +147,8 @@ Resources:
           DB_PORT: !Ref DbEndpointPort
           DB_NAME: !Ref DbName
           SQS_NOTIFICATION_QUEUE_URL: !Ref MainQueueUrl
+          CONNECTIONS_TABLE_NAME: !Ref ConnectionsTableName
+          WEBSOCKET_MANAGEMENT_ENDPOINT: !Ref WebSocketManagementEndpoint
 
   WorkerEventSourceMapping:
     Type: AWS::Lambda::EventSourceMapping

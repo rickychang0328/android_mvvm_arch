@@ -48,12 +48,37 @@ flowchart TD
     sendApi --> recipientTable[notification_recipients]
     sendApi --> queue[MessageQueue]
     queue --> pushWorker[PushWorker]
-    pushWorker --> fcm[FirebaseFCM]
-    app[AndroidApp] --> registerApi[POST_push_register_token]
+    pushWorker --> connTable[ws_connections]
+    pushWorker -->|"online: postToConnection"| wsApi[WebSocketAPI]
+    pushWorker -->|"offline / fallback"| fcm[FirebaseFCM]
+    wsApi --> app[MobileApp]
+    app -->|"wss connect"| wsConnect[$connect_disconnect]
+    wsConnect --> connTable
+    app --> registerApi[POST_push_register_token]
     registerApi --> regTable[push_registrations]
     fcm --> tapEvent[UserTapPush]
     tapEvent --> openApi[POST_notifications_id_open]
     openApi --> inboxTable
+```
+
+### 2.1 線上 WebSocket 與離線 FCM 的投遞決策
+
+- App 在前景且有 active WebSocket 連線時：worker 透過 `ws_connections` 以 `userId` 反查 `connectionId`，呼叫 `postToConnection` 即時推送，不額外發 FCM。
+- App 在背景/已關閉（無 active 連線）或即時推送失敗時：worker fallback 走 FCM/APNs 喚醒裝置。
+- 不論走哪條路徑，皆寫入 `user_notifications` inbox 並更新 `notification_recipients.delivery_status`，確保最終一致性。
+
+WebSocket 投遞流程：
+
+```mermaid
+stateDiagram-v2
+    [*] --> LookupConnections
+    LookupConnections --> PushWebSocket: hasActiveConnection
+    LookupConnections --> SendFcm: noConnection
+    PushWebSocket --> Delivered: ok
+    PushWebSocket --> CleanupStale: gone410
+    CleanupStale --> SendFcm
+    PushWebSocket --> SendFcm: pushError
+    SendFcm --> Delivered
 ```
 
 ---
@@ -163,9 +188,14 @@ stateDiagram-v2
 - `compute-api.yaml`
   - API Lambda + HTTP API routes（含 `register-token` / `internal send` / `mark-open`）
 - `compute-worker.yaml`
-  - SQS consumer Lambda + event source mapping（發送 FCM 與更新投遞狀態）
+  - SQS consumer Lambda + event source mapping（線上走 WebSocket `postToConnection`、離線 fallback FCM，並更新投遞狀態）
+  - 具備 DynamoDB 連線表查詢/清理與 `execute-api:ManageConnections` 權限
+- `compute-realtime.yaml`
+  - API Gateway WebSocket API（`$connect` / `$disconnect` / `$default`）
+  - 連線管理 Lambda（`$connect` 內嵌 JWT 驗證、寫入 `connectionId→userId`+ttl；`$disconnect` 刪除）
+  - DynamoDB 連線表 `ws-connections`（PK `connectionId`、GSI `userId-index`、TTL 自動清理）
 - `monitoring.yaml`
-  - Lambda errors/throttles、SQS age/DLQ depth、RDS CPU alarms
+  - Lambda errors/throttles（API / worker / realtime）、SQS age/DLQ depth、RDS CPU alarms
 - `root-stack.yaml`
   - 聚合全部 nested stacks 與跨堆疊輸出
 

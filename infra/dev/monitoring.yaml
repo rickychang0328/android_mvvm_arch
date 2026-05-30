@@ -12,6 +12,8 @@ Parameters:
     Type: String
   WorkerFunctionName:
     Type: String
+  RealtimeFunctionName:
+    Type: String
   MainQueueName:
     Type: String
   DeadLetterQueueName:
@@ -54,6 +56,24 @@ Resources:
       Dimensions:
         - Name: FunctionName
           Value: !Ref WorkerFunctionName
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlarmTopic, [!Ref AlarmSnsTopicArn], !Ref AWS::NoValue]
+
+  RealtimeLambdaErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-realtime-errors'
+      AlarmDescription: Realtime Lambda errors > 0 in 5 minutes.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref RealtimeFunctionName
       Statistic: Sum
       Period: 300
       EvaluationPeriods: 1
@@ -141,6 +161,9 @@ Outputs:
   WorkerLambdaErrorsAlarmName:
     Description: Name of worker errors alarm.
     Value: !Ref WorkerLambdaErrorsAlarm
+  RealtimeLambdaErrorsAlarmName:
+    Description: Name of realtime errors alarm.
+    Value: !Ref RealtimeLambdaErrorsAlarm
   DeadLetterQueueDepthAlarmName:
     Description: Name of DLQ depth alarm.
     Value: !Ref DeadLetterQueueDepthAlarm

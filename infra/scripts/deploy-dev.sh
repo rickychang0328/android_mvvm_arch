@@ -17,6 +17,7 @@ ARTIFACT_PREFIX="${ARTIFACT_PREFIX:-artifacts/${ENVIRONMENT}}"
 
 API_ARTIFACT_PATH="${API_ARTIFACT_PATH:-${ROOT_DIR}/infra/artifacts/api-handler.zip}"
 WORKER_ARTIFACT_PATH="${WORKER_ARTIFACT_PATH:-${ROOT_DIR}/infra/artifacts/push-worker.zip}"
+REALTIME_ARTIFACT_PATH="${REALTIME_ARTIFACT_PATH:-${ROOT_DIR}/infra/artifacts/realtime-handler.zip}"
 
 JWT_ISSUER="${JWT_ISSUER:-https://your-issuer.example.com}"
 JWT_AUDIENCE="${JWT_AUDIENCE:-android-mvvm-arch-app}"
@@ -45,6 +46,11 @@ if [[ ! -f "${WORKER_ARTIFACT_PATH}" ]]; then
   exit 1
 fi
 
+if [[ ! -f "${REALTIME_ARTIFACT_PATH}" ]]; then
+  echo "ERROR: Realtime artifact not found at ${REALTIME_ARTIFACT_PATH}"
+  exit 1
+fi
+
 upload_template() {
   local filename="$1"
   aws s3 cp \
@@ -59,15 +65,18 @@ upload_template "data.yaml"
 upload_template "messaging.yaml"
 upload_template "compute-api.yaml"
 upload_template "compute-worker.yaml"
+upload_template "compute-realtime.yaml"
 upload_template "monitoring.yaml"
 upload_template "root-stack.yaml"
 
 echo "Uploading lambda artifacts to s3://${ARTIFACT_BUCKET}/${ARTIFACT_PREFIX}/ ..."
 aws s3 cp "${API_ARTIFACT_PATH}" "s3://${ARTIFACT_BUCKET}/${ARTIFACT_PREFIX}/api-handler.zip" --region "${REGION}" >/dev/null
 aws s3 cp "${WORKER_ARTIFACT_PATH}" "s3://${ARTIFACT_BUCKET}/${ARTIFACT_PREFIX}/push-worker.zip" --region "${REGION}" >/dev/null
+aws s3 cp "${REALTIME_ARTIFACT_PATH}" "s3://${ARTIFACT_BUCKET}/${ARTIFACT_PREFIX}/realtime-handler.zip" --region "${REGION}" >/dev/null
 
 API_CODE_KEY="${ARTIFACT_PREFIX}/api-handler.zip"
 WORKER_CODE_KEY="${ARTIFACT_PREFIX}/push-worker.zip"
+REALTIME_CODE_KEY="${ARTIFACT_PREFIX}/realtime-handler.zip"
 
 if aws cloudformation describe-stacks --stack-name "${STACK_NAME}" --region "${REGION}" >/dev/null 2>&1; then
   CHANGE_SET_TYPE="UPDATE"
@@ -96,6 +105,8 @@ aws cloudformation create-change-set \
     ParameterKey=ApiCodeS3Key,ParameterValue="${API_CODE_KEY}" \
     ParameterKey=WorkerCodeS3Bucket,ParameterValue="${ARTIFACT_BUCKET}" \
     ParameterKey=WorkerCodeS3Key,ParameterValue="${WORKER_CODE_KEY}" \
+    ParameterKey=RealtimeCodeS3Bucket,ParameterValue="${ARTIFACT_BUCKET}" \
+    ParameterKey=RealtimeCodeS3Key,ParameterValue="${REALTIME_CODE_KEY}" \
     ParameterKey=JwtIssuer,ParameterValue="${JWT_ISSUER}" \
     ParameterKey=JwtAudience,ParameterValue="${JWT_AUDIENCE}" \
     ParameterKey=NotificationServiceScope,ParameterValue="${NOTIFICATION_SERVICE_SCOPE}" \

@@ -23,6 +23,7 @@ infra/dev/data.yaml
 infra/dev/messaging.yaml
 infra/dev/compute-api.yaml
 infra/dev/compute-worker.yaml
+infra/dev/compute-realtime.yaml
 infra/dev/monitoring.yaml
 infra/dev/root-stack.yaml
 infra/scripts/deploy-dev.sh
@@ -34,9 +35,10 @@ Nested stack 依賴順序：
 2. data
 3. messaging
 4. compute-api
-5. compute-worker
-6. monitoring
-7. root（聚合與輸出）
+5. compute-realtime（WebSocket API + 連線表，需先於 worker 建立以提供連線表與 management endpoint）
+6. compute-worker（依賴 compute-realtime 輸出）
+7. monitoring
+8. root（聚合與輸出）
 
 ---
 
@@ -50,13 +52,14 @@ Nested stack 依賴順序：
 - Lambda artifact 檔案：
   - `infra/artifacts/api-handler.zip`
   - `infra/artifacts/push-worker.zip`
+  - `infra/artifacts/realtime-handler.zip`
 
 必要 IAM 權限（部署者）：
 
 - CloudFormation：`CreateChangeSet` / `ExecuteChangeSet` / `Describe*`
 - S3：對 template/artifact bucket 的 `PutObject` / `GetObject`
 - IAM：建立或更新 Lambda execution roles（`CAPABILITY_NAMED_IAM`）
-- Lambda、API Gateway、SQS、RDS、Secrets Manager、CloudWatch（建立/更新資源）
+- Lambda、API Gateway（HTTP + WebSocket）、SQS、DynamoDB、RDS、Secrets Manager、CloudWatch（建立/更新資源）
 
 ---
 
@@ -104,12 +107,23 @@ bash infra/scripts/deploy-dev.sh
 2. `POST /api/v1/internal/notifications/send`
 3. `POST /api/v1/notifications/{id}/open`
 
+WebSocket 連線測試（使用 `wscat`，token 需替換）：
+
+```bash
+# WebSocketApiEndpoint 來自 root stack output
+wscat -H "Authorization: Bearer <JWT>" \
+  -c "wss://<api-id>.execute-api.ap-southeast-2.amazonaws.com/dev"
+```
+
+連線成功後，對該使用者觸發 `internal/notifications/send`，應在連線中即時收到推送訊息（而非走 FCM）。
+
 同時檢查：
 
-- CloudWatch Logs：API handler / push worker
+- CloudWatch Logs：API handler / push worker / realtime handler
 - SQS：
   - main queue backlog 是否可被消化
   - DLQ 是否出現堆積
+- DynamoDB：`ws-connections` 在 `$connect` 後出現項目、`$disconnect` 後移除
 - RDS：`push_registrations`、`notification_events`、`notification_recipients`、`user_notifications` 寫入正常
 
 ---
